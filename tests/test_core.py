@@ -1,0 +1,91 @@
+from qiskit import QuantumCircuit
+
+from groverlab.grover_config import NoiseConfig
+from groverlab.grover_core import (
+    apply_diffuser,
+    build_grover_circuit,
+    decode_result,
+    get_gate_counts,
+    get_statevector_probabilities,
+    run_ideal_simulation,
+    run_noisy_simulation,
+)
+from groverlab.grover_data import create_dataset_mapping
+
+
+def test_apply_diffuser_has_expected_two_qubit_operations():
+    qc = QuantumCircuit(2)
+
+    apply_diffuser(qc, 2)
+
+    assert qc.count_ops() == {"h": 6, "x": 4, "cx": 1}
+
+
+def test_build_grover_circuit_adds_measurements_by_default():
+    mapping = create_dataset_mapping(["apple", "mango", "banana", "orange"], "banana")
+
+    qc = build_grover_circuit(mapping, iterations=1)
+
+    assert qc.num_qubits == 2
+    assert qc.num_clbits == 2
+    assert get_gate_counts(qc)["measure"] == 2
+
+
+def test_ideal_simulation_finds_target_for_four_item_example():
+    mapping = create_dataset_mapping(["apple", "mango", "banana", "orange"], "banana")
+    qc = build_grover_circuit(mapping, iterations=1)
+
+    counts = run_ideal_simulation(qc, shots=128, seed=42)
+
+    assert counts == {"10": 128}
+
+
+def test_noisy_simulation_returns_none_when_noise_disabled():
+    mapping = create_dataset_mapping(["apple", "mango", "banana", "orange"], "banana")
+    qc = build_grover_circuit(mapping, iterations=1)
+
+    counts = run_noisy_simulation(qc, shots=128, noise_config=NoiseConfig(), seed=42)
+
+    assert counts is None
+
+
+def test_noisy_simulation_returns_counts_when_noise_enabled():
+    mapping = create_dataset_mapping(["apple", "mango", "banana", "orange"], "banana")
+    qc = build_grover_circuit(mapping, iterations=1)
+
+    counts = run_noisy_simulation(
+        qc,
+        shots=128,
+        noise_config=NoiseConfig(
+            noise_enabled=True,
+            depolar_prob=0.01,
+            measurement_error_prob=0.01,
+        ),
+        seed=42,
+    )
+
+    assert counts is not None
+    assert sum(counts.values()) == 128
+
+
+def test_decode_result_reports_target_success_probability():
+    mapping = create_dataset_mapping(["apple", "mango", "banana", "orange"], "banana")
+
+    decoded = decode_result({"00": 60, "10": 40}, mapping)
+
+    assert decoded["measured_bitstring"] == "00"
+    assert decoded["decoded_item"] == "apple"
+    assert decoded["found"] is False
+    assert decoded["success_probability"] == 0.4
+
+
+def test_statevector_probabilities_are_plain_dict_values():
+    mapping = create_dataset_mapping(["apple", "mango", "banana", "orange"], "banana")
+    qc = build_grover_circuit(mapping, iterations=1, measure=False)
+
+    probabilities = get_statevector_probabilities(qc)
+
+    assert probabilities["10"] > 0.999
+    assert all(isinstance(key, str) for key in probabilities)
+    assert all(isinstance(value, float) for value in probabilities.values())
+
