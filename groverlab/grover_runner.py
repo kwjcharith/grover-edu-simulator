@@ -44,12 +44,45 @@ def run_grover_simulation(config: GroverConfig) -> GroverResult:
     """Run a complete Grover simulation and return a structured result."""
 
     start_time = time.perf_counter()
-    mapping = create_dataset_mapping(config.dataset_items, config.target_item)
+    mapping = create_dataset_mapping(
+        config.dataset_items,
+        config.target_item,
+        missing_target_mode=config.missing_target_mode,
+    )
     iterations = config.iterations
     if iterations is None:
         iterations = recommended_iterations(mapping.padded_size)
 
-    circuit = build_grover_circuit(mapping, iterations=iterations, measure=True)
+    if not mapping.target_found and config.missing_target_mode == "stop":
+        warnings = _generate_warnings(mapping, config, iterations)
+        explanation_steps = _generate_explanation_steps(mapping, iterations, config.education_mode)
+        runtime_seconds = time.perf_counter() - start_time
+        return GroverResult(
+            config=config,
+            mapping=mapping,
+            circuit_depth=0,
+            gate_counts={},
+            ideal_counts={},
+            noisy_counts=None,
+            success_probability=0.0,
+            noisy_success_probability=None,
+            measured_bitstring="",
+            decoded_item=None,
+            found=False,
+            target_found=False,
+            stopped_before_quantum_execution=True,
+            missing_target_explanation=mapping.missing_target_explanation,
+            runtime_seconds=runtime_seconds,
+            explanation_steps=explanation_steps,
+            warnings=warnings,
+        )
+
+    circuit = build_grover_circuit(
+        mapping,
+        iterations=iterations,
+        measure=True,
+        allow_no_target=config.missing_target_mode == "experimental",
+    )
     ideal_counts = run_ideal_simulation(circuit, shots=config.shots, seed=config.seed)
     noisy_counts = run_noisy_simulation(
         circuit,
@@ -78,6 +111,9 @@ def run_grover_simulation(config: GroverConfig) -> GroverResult:
         measured_bitstring=decoded["measured_bitstring"],
         decoded_item=decoded["decoded_item"],
         found=decoded["found"],
+        target_found=mapping.target_found,
+        stopped_before_quantum_execution=False,
+        missing_target_explanation=mapping.missing_target_explanation,
         runtime_seconds=runtime_seconds,
         explanation_steps=explanation_steps,
         warnings=warnings,
@@ -132,6 +168,18 @@ def _generate_explanation_steps(
     if not education_mode:
         return []
 
+    if not mapping.target_found:
+        return [
+            CORE_WARNING,
+            mapping.missing_target_explanation or "",
+            (
+                f"The cleaned dataset has {mapping.n_items} items encoded into "
+                f"{mapping.n_qubits} qubits and {mapping.padded_size} padded states."
+            ),
+            "No valid marked state exists, so a meaningful Grover oracle cannot be constructed.",
+            "In experimental no-solution mode, the circuit demonstrates near-uniform measurement rather than a successful search.",
+        ]
+
     return [
         CORE_WARNING,
         (
@@ -163,7 +211,22 @@ def _generate_warnings(mapping, config: GroverConfig, iterations: int) -> list[s
         )
     if config.noise_config.noise_enabled:
         warnings.append("Noisy simulation is enabled; noise can reduce measured success.")
+    if not mapping.target_found and config.missing_target_mode == "experimental":
+        warnings.append(
+            "This run is an experimental no-solution demonstration. Any measured item is random and should not be interpreted as a successful search."
+        )
     if iterations == 0:
         warnings.append("Zero Grover iterations were requested; this only samples superposition.")
-    return warnings
+    return _deduplicate(warnings)
 
+
+def _deduplicate(items: list[str]) -> list[str]:
+    """Preserve order while removing duplicate warnings."""
+
+    seen: set[str] = set()
+    unique_items: list[str] = []
+    for item in items:
+        if item and item not in seen:
+            unique_items.append(item)
+            seen.add(item)
+    return unique_items

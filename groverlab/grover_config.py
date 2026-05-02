@@ -43,6 +43,7 @@ class GroverConfig:
     noise_config: NoiseConfig = field(default_factory=NoiseConfig)
     education_mode: bool = True
     allow_padding: bool = True
+    missing_target_mode: str = "stop"
 
     def __post_init__(self) -> None:
         """Validate user-facing simulation configuration."""
@@ -55,6 +56,8 @@ class GroverConfig:
             raise ValueError("shots must be positive.")
         if self.iterations is not None and self.iterations < 0:
             raise ValueError("iterations must be non-negative when provided.")
+        if self.missing_target_mode not in {"stop", "experimental"}:
+            raise ValueError("missing_target_mode must be 'stop' or 'experimental'.")
 
 
 @dataclass(frozen=True)
@@ -67,10 +70,12 @@ class DatasetMapping:
     padded_size: int
     n_qubits: int
     target_item: str
+    target_found: bool
     target_index: int
     target_binary: str
     unused_states: int
     warnings: list[str]
+    missing_target_explanation: str | None
 
 
 @dataclass(frozen=True)
@@ -88,6 +93,9 @@ class GroverResult:
     measured_bitstring: str
     decoded_item: str | None
     found: bool
+    target_found: bool
+    stopped_before_quantum_execution: bool
+    missing_target_explanation: str | None
     runtime_seconds: float
     explanation_steps: list[str]
     warnings: list[str]

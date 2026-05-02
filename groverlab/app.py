@@ -69,6 +69,15 @@ def main() -> None:
                 value=1,
                 step=1,
             )
+        missing_target_label = st.radio(
+            "Missing target handling",
+            ["Practical mode: stop before quantum execution", "Experimental mode: run no-solution demonstration"],
+        )
+        missing_target_mode = (
+            "experimental"
+            if missing_target_label.startswith("Experimental")
+            else "stop"
+        )
 
         noise_enabled = st.checkbox("Enable noisy simulation")
         depolar_prob = 0.0
@@ -109,7 +118,7 @@ def main() -> None:
     items = clean_items(items)
     if items:
         st.caption(f"Loaded {len(items)} cleaned item(s).")
-        st.dataframe(pd.DataFrame({"index": range(len(items)), "item": items}), use_container_width=True)
+        st.dataframe(pd.DataFrame({"index": range(len(items)), "item": items}), width="stretch")
 
     st.header("Target Item")
     target_from_select = None
@@ -149,6 +158,7 @@ def main() -> None:
                 depolar_prob=depolar_prob,
                 measurement_error_prob=measurement_error_prob,
             ),
+            missing_target_mode=missing_target_mode,
         )
         with st.spinner("Running Grover simulation..."):
             result = run_grover_simulation(config)
@@ -190,18 +200,25 @@ def _render_mapping(st, result) -> None:
                 ],
             }
         ),
-        use_container_width=True,
+        width="stretch",
     )
 
     col1, col2, col3, col4 = st.columns(4)
     col1.metric("Target index", mapping.target_index)
-    col2.metric("Target binary state", mapping.target_binary)
+    col2.metric("Target binary state", mapping.target_binary or "None")
     col3.metric("Qubits", mapping.n_qubits)
     col4.metric("Unused padded states", mapping.unused_states)
 
 
 def _render_simulation_outputs(st, result) -> None:
     """Render ideal/noisy simulation summaries and histogram."""
+
+    if result.stopped_before_quantum_execution:
+        st.header("Missing Target")
+        st.warning("Target item not found in dataset.")
+        st.write(result.missing_target_explanation)
+        st.info("No quantum circuit execution was performed. Missing-target validation was handled classically before constructing the oracle.")
+        return
 
     st.header("Ideal Simulation")
     col1, col2, col3 = st.columns(3)
@@ -219,7 +236,7 @@ def _render_simulation_outputs(st, result) -> None:
                 sorted(result.noisy_counts.items()),
                 columns=["bitstring", "count"],
             ),
-            use_container_width=True,
+            width="stretch",
         )
 
     st.header("Circuit Summary")
@@ -231,12 +248,16 @@ def _render_simulation_outputs(st, result) -> None:
             sorted(result.gate_counts.items()),
             columns=["gate", "count"],
         ),
-        use_container_width=True,
+        width="stretch",
     )
 
     st.header("Measurement Histogram")
     histogram = plot_counts_histogram(result.ideal_counts, result.mapping.target_binary)
     st.pyplot(histogram)
+    if not result.target_found:
+        st.warning(
+            "This is an experimental no-solution demonstration. The distribution is expected to be approximately uniform or random, and any measured item is not a valid search success."
+        )
 
 
 def _render_explanations(st, result) -> None:
@@ -263,23 +284,26 @@ def _render_explanations(st, result) -> None:
 def _render_analysis(st, config: GroverConfig, result) -> None:
     """Render iteration sweep, noise sweep, and classical comparison."""
 
+    if result.stopped_before_quantum_execution:
+        return
+
     st.header("Iteration Sweep")
     max_iterations = max(2, min(10, (result.config.iterations or 1) * 2 + 2))
     with st.spinner("Running iteration sweep..."):
         iteration_results = run_iteration_sweep(config, max_iterations=max_iterations)
-    st.dataframe(pd.DataFrame(iteration_results), use_container_width=True)
+    st.dataframe(pd.DataFrame(iteration_results), width="stretch")
     st.pyplot(plot_iteration_sweep(iteration_results))
 
     st.header("Noise Sweep")
     noise_values = [0.0, 0.01, 0.03, 0.05]
     with st.spinner("Running noise sweep..."):
         noise_results = run_noise_sweep(config, noise_values=noise_values)
-    st.dataframe(pd.DataFrame(noise_results), use_container_width=True)
+    st.dataframe(pd.DataFrame(noise_results), width="stretch")
     st.pyplot(plot_noise_sweep(noise_results))
 
     st.header("Classical vs Grover Comparison")
     comparison = compare_classical_vs_grover(result.mapping.n_items)
-    st.dataframe(pd.DataFrame([comparison]), use_container_width=True)
+    st.dataframe(pd.DataFrame([comparison]), width="stretch")
     st.pyplot(plot_classical_vs_grover(comparison))
 
 

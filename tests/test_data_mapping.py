@@ -1,7 +1,5 @@
 import io
 
-import pytest
-
 from groverlab.grover_data import (
     calculate_padded_size,
     calculate_required_qubits,
@@ -9,6 +7,7 @@ from groverlab.grover_data import (
     create_dataset_mapping,
     decode_bitstring,
     encode_index_to_binary,
+    get_missing_target_explanation,
     load_csv_items,
     parse_comma_text,
 )
@@ -85,7 +84,33 @@ def test_decode_bitstring_returns_item_for_used_state():
     assert decode_bitstring("10", mapping) == "banana"
 
 
-def test_missing_target_raises_value_error():
-    with pytest.raises(ValueError, match="Target item 'pear' was not found"):
-        create_dataset_mapping(["apple", "banana"], "pear")
+def test_missing_target_stop_mode_returns_mapping_without_index():
+    mapping = create_dataset_mapping(["apple", "banana", "pineapple"], "abc")
 
+    assert mapping.target_found is False
+    assert mapping.target_index == -1
+    assert mapping.target_binary == ""
+    assert mapping.n_qubits == 2
+    assert mapping.padded_size == 4
+    assert "Grover oracle cannot be constructed" in mapping.warnings[-1]
+
+
+def test_missing_target_experimental_mode_returns_mapping_without_index():
+    mapping = create_dataset_mapping(
+        ["apple", "banana", "pineapple"],
+        "abc",
+        missing_target_mode="experimental",
+    )
+
+    assert mapping.target_found is False
+    assert mapping.target_index == -1
+    assert mapping.target_binary == ""
+    assert "Experimental no-solution mode" in mapping.warnings[-1]
+
+
+def test_missing_target_explanation_present():
+    mapping = create_dataset_mapping(["apple", "banana", "pineapple"], "abc")
+
+    assert mapping.missing_target_explanation
+    assert "no valid marked quantum state" in mapping.missing_target_explanation
+    assert "phase inversion" in get_missing_target_explanation("abc", mapping)

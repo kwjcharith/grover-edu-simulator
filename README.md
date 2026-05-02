@@ -17,6 +17,29 @@ engine.
 Grover's algorithm does not directly search raw CSV text. GroverLab maps dataset
 entries to quantum-searchable indices and searches those encoded indices.
 
+## Searching For An Item That Is Not In The Dataset
+
+Grover requires a valid oracle. If the target is absent, no marked state exists.
+Without a marked state, no phase inversion occurs and no useful amplitude
+amplification occurs.
+
+Example dataset:
+
+```text
+apple, banana, pineapple
+```
+
+Target:
+
+```text
+abc
+```
+
+Expected practical result: the simulator reports that the item is not present
+and stops before quantum execution. In experimental mode, GroverLab can run a
+no-solution demonstration where no oracle state is marked and measurement
+probabilities remain near-uniform.
+
 ## Planned Workflow
 
 1. Enter comma-separated data or upload a CSV file.
@@ -41,4 +64,3 @@ streamlit run groverlab/app.py
 ```bash
 pytest
 ```
-

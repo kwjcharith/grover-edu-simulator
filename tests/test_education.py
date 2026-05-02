@@ -3,6 +3,8 @@ from groverlab.grover_data import create_dataset_mapping
 from groverlab.grover_education import (
     LEARNING_OUTCOMES,
     explain_dataset_mapping,
+    explain_missing_target,
+    explain_no_solution_experiment,
     explain_noise,
     generate_full_explanation,
     generate_quiz_questions,
@@ -34,6 +36,7 @@ def test_misconception_warnings_include_required_warnings():
     assert "Measurement is probabilistic." in warnings
     assert "Noise can reduce or destroy the quantum advantage." in warnings
     assert "Non-power-of-two datasets require padded unused states." in warnings
+    assert any("does not automatically know" in warning for warning in warnings)
     assert any("padded unused state" in warning for warning in warnings)
 
 
@@ -89,3 +92,24 @@ def test_explain_noise_describes_ideal_and_noisy_modes():
 
     assert "idealized" in explain_noise(ideal_config.noise_config)
     assert "Noise is enabled" in explain_noise(noisy_config.noise_config)
+
+
+def test_missing_target_explanations_describe_no_valid_oracle():
+    mapping = create_dataset_mapping(["apple", "banana", "pineapple"], "abc")
+
+    assert "no valid solution state" in explain_missing_target("abc", mapping)
+    assert "approximately uniform" in explain_no_solution_experiment(mapping)
+
+
+def test_full_explanation_includes_missing_target_section():
+    config = GroverConfig(
+        dataset_items=["apple", "banana", "pineapple"],
+        target_item="abc",
+        missing_target_mode="stop",
+    )
+    result = run_grover_simulation(config)
+
+    explanation = generate_full_explanation(result)
+
+    assert "missing_target" in explanation["sections"]
+    assert result.stopped_before_quantum_execution is True

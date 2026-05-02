@@ -17,12 +17,12 @@ def plot_counts_histogram(
 
     if not counts:
         raise ValueError("Measurement counts cannot be empty.")
-    if not target_binary:
-        raise ValueError("target_binary must not be empty.")
-
     labels = sorted(counts)
     values = [counts[label] for label in labels]
-    colors = ["#2E86AB" if label != target_binary else "#D1495B" for label in labels]
+    colors = [
+        "#D1495B" if target_binary and label == target_binary else "#2E86AB"
+        for label in labels
+    ]
 
     fig, ax = plt.subplots(figsize=(8, 4.5))
     ax.bar(labels, values, color=colors)
@@ -30,13 +30,10 @@ def plot_counts_histogram(
     ax.set_xlabel("Measured bitstring")
     ax.set_ylabel("Counts")
     ax.grid(axis="y", alpha=0.25)
-    ax.legend(
-        handles=[
-            plt.Rectangle((0, 0), 1, 1, color="#D1495B", label="Target"),
-            plt.Rectangle((0, 0), 1, 1, color="#2E86AB", label="Other states"),
-        ],
-        loc="best",
-    )
+    handles = [plt.Rectangle((0, 0), 1, 1, color="#2E86AB", label="Measured states")]
+    if target_binary:
+        handles.insert(0, plt.Rectangle((0, 0), 1, 1, color="#D1495B", label="Target"))
+    ax.legend(handles=handles, loc="best")
     fig.tight_layout()
     _save_if_requested(fig, save_path)
     return fig
@@ -237,4 +234,3 @@ def _coerce_matrix(values: Any) -> list[list[float]]:
         if any(len(row) != width for row in matrix):
             raise ValueError("Heatmap rows must all have the same length.")
     return matrix
-

@@ -21,6 +21,7 @@ MISCONCEPTION_WARNINGS = [
     "Measurement is probabilistic.",
     "Noise can reduce or destroy the quantum advantage.",
     "Non-power-of-two datasets require padded unused states.",
+    "Grover’s Algorithm does not automatically know whether a text item exists in a classical dataset. The target must correspond to a valid encoded state or to a condition that the oracle can evaluate.",
 ]
 
 LEARNING_OUTCOMES = [
@@ -36,6 +37,14 @@ LEARNING_OUTCOMES = [
 
 def explain_dataset_mapping(mapping: DatasetMapping) -> str:
     """Explain how classical items are mapped to quantum-searchable indices."""
+
+    if not mapping.target_found:
+        return (
+            f"The original dataset is cleaned into {mapping.n_items} item(s), but "
+            f"the requested target item '{mapping.target_item}' is not present. "
+            "GroverLab can still show the encoded index space, but there is no "
+            "target index or target binary state for the oracle to mark."
+        )
 
     return (
         f"The original dataset is cleaned into {mapping.n_items} item(s). "
@@ -61,6 +70,9 @@ def explain_superposition(mapping: DatasetMapping) -> str:
 def explain_oracle(mapping: DatasetMapping) -> str:
     """Explain oracle phase marking for the target state."""
 
+    if not mapping.target_found:
+        return explain_missing_target(mapping.target_item, mapping)
+
     return (
         f"The oracle recognizes the encoded target state |{mapping.target_binary}> "
         "and flips only that state's phase. The marked state is not measured yet; "
@@ -78,6 +90,31 @@ def explain_diffuser() -> str:
         "inversion about the mean. After the oracle marks the target by phase, "
         "the diffuser increases the target state's amplitude and decreases many "
         "non-target amplitudes, making the target more likely to appear when measured."
+    )
+
+
+def explain_missing_target(target_item: str, mapping: DatasetMapping) -> str:
+    """Explain why a missing target prevents meaningful oracle construction."""
+
+    return (
+        "If the requested item is not in the dataset, Grover’s Algorithm cannot "
+        "construct a meaningful oracle because there is no valid solution state "
+        "to mark. In that case, no phase inversion occurs and the diffuser has no "
+        "useful marked amplitude to amplify. Practical systems therefore handle "
+        "this with a classical validation step before running the quantum circuit."
+    )
+
+
+def explain_no_solution_experiment(mapping: DatasetMapping) -> str:
+    """Explain the experimental no-solution demonstration mode."""
+
+    return (
+        "This experimental run intentionally uses no marked state. The circuit "
+        f"places {mapping.n_qubits} qubit(s) into superposition over "
+        f"{mapping.padded_size} encoded states, but no oracle phase flip is "
+        "applied. Because there is no solution state to amplify, measurement "
+        "outcomes should remain approximately uniform or random. Any measured "
+        "item is not a valid search success."
     )
 
 
@@ -99,6 +136,20 @@ def explain_iterations(config: GroverConfig, mapping: DatasetMapping) -> str:
 
 def explain_measurement(result: GroverResult) -> str:
     """Explain how measurement counts are interpreted."""
+
+    if not result.target_found and result.stopped_before_quantum_execution:
+        return (
+            "No measurement was performed because GroverLab stopped before quantum "
+            "execution. The requested target item was not in the dataset, so no "
+            "valid marked state existed."
+        )
+    if not result.target_found:
+        return (
+            f"The simulator measured {result.measured_bitstring or 'no bitstring'} "
+            "most often in the no-solution demonstration. Because no valid target "
+            "state exists, the success probability is 0.000 and any decoded item "
+            "should be treated as a random sample, not a successful search."
+        )
 
     return (
         f"The simulator measured the bitstring {result.measured_bitstring} most often, "
@@ -142,6 +193,10 @@ def misconception_warnings(mapping: DatasetMapping, config: GroverConfig) -> lis
         warnings.append("This run includes noise, so ideal and noisy results may differ.")
     if config.iterations is not None and config.iterations == 0:
         warnings.append("With zero iterations, the circuit samples the initial superposition.")
+    if not mapping.target_found and config.missing_target_mode == "experimental":
+        warnings.append(
+            "Experimental no-solution mode is for learning only; any measured item is random and should not be interpreted as a successful search."
+        )
     return _deduplicate(warnings)
 
 
@@ -155,7 +210,7 @@ def generate_quiz_questions(mapping: DatasetMapping) -> list[dict[str, str]]:
         },
         {
             "question": f"What binary state represents the target item '{mapping.target_item}'?",
-            "answer": f"|{mapping.target_binary}>.",
+            "answer": f"|{mapping.target_binary}>." if mapping.target_found else "No binary target state exists because the item is missing.",
         },
         {
             "question": "What does the oracle do to the marked state?",
@@ -174,6 +229,22 @@ def generate_quiz_questions(mapping: DatasetMapping) -> list[dict[str, str]]:
 
 def generate_student_activity(result: GroverResult) -> dict[str, Any]:
     """Generate a concise classroom or lab activity from a simulation result."""
+
+    if not result.target_found:
+        return {
+            "title": "Investigate a No-Solution Grover Case",
+            "goal": "Explain why a missing target cannot be amplified by Grover's Algorithm.",
+            "steps": [
+                "List the dataset items and confirm the requested target is absent.",
+                "Explain why no target index or binary state exists.",
+                "Identify why the oracle cannot mark a solution state.",
+                "If experimental mode was used, inspect the histogram and check whether it is roughly uniform.",
+                "Explain why any measured item is not a successful search result.",
+            ],
+            "reflection_prompt": (
+                "Why does a practical system validate the target classically before constructing the oracle?"
+            ),
+        }
 
     return {
         "title": "Trace One Grover Search Run",
@@ -196,18 +267,24 @@ def generate_student_activity(result: GroverResult) -> dict[str, Any]:
 def generate_full_explanation(result: GroverResult) -> dict[str, Any]:
     """Generate a full educational explanation bundle for a result."""
 
+    sections = {
+        "dataset_mapping": explain_dataset_mapping(result.mapping),
+        "superposition": explain_superposition(result.mapping),
+        "oracle": explain_oracle(result.mapping),
+        "diffuser": explain_diffuser(),
+        "iterations": explain_iterations(result.config, result.mapping),
+        "measurement": explain_measurement(result),
+        "noise": explain_noise(result.config.noise_config),
+    }
+    if not result.target_found:
+        sections["missing_target"] = explain_missing_target(result.mapping.target_item, result.mapping)
+        if not result.stopped_before_quantum_execution:
+            sections["no_solution_experiment"] = explain_no_solution_experiment(result.mapping)
+
     return {
         "learning_outcomes": LEARNING_OUTCOMES,
         "warnings": misconception_warnings(result.mapping, result.config),
-        "sections": {
-            "dataset_mapping": explain_dataset_mapping(result.mapping),
-            "superposition": explain_superposition(result.mapping),
-            "oracle": explain_oracle(result.mapping),
-            "diffuser": explain_diffuser(),
-            "iterations": explain_iterations(result.config, result.mapping),
-            "measurement": explain_measurement(result),
-            "noise": explain_noise(result.config.noise_config),
-        },
+        "sections": sections,
         "quiz_questions": generate_quiz_questions(result.mapping),
         "student_activity": generate_student_activity(result),
     }
@@ -233,4 +310,3 @@ def _deduplicate(items: list[str]) -> list[str]:
             unique_items.append(item)
             seen.add(item)
     return unique_items
-

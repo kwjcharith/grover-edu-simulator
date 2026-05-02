@@ -47,12 +47,30 @@ def build_grover_circuit(
     mapping: DatasetMapping | str,
     iterations: int | None = None,
     measure: bool = True,
+    allow_no_target: bool = False,
+    apply_diffuser_without_oracle: bool = False,
 ) -> QuantumCircuit:
     """Build a Grover circuit from a DatasetMapping or target bitstring.
 
     Passing a raw bitstring is retained for compatibility with the initial
     scaffold; production code should pass DatasetMapping.
     """
+
+    if isinstance(mapping, DatasetMapping) and not mapping.target_found:
+        if not allow_no_target:
+            raise ValueError("Cannot build Grover circuit because no target state exists.")
+        qc = create_initial_circuit(mapping.n_qubits)
+        apply_superposition(qc, mapping.n_qubits)
+        if iterations is None:
+            iterations = recommended_iterations(mapping.padded_size)
+        if iterations < 0:
+            raise ValueError("iterations must be non-negative.")
+        if apply_diffuser_without_oracle:
+            for _ in range(iterations):
+                apply_diffuser(qc, mapping.n_qubits)
+        if measure:
+            _add_measurements(qc, mapping.n_qubits)
+        return qc
 
     target_binary, n_qubits, search_space_size = _extract_mapping_fields(mapping)
     if iterations is None:
@@ -149,12 +167,17 @@ def decode_result(counts: dict[str, int], mapping: DatasetMapping) -> dict[str, 
     measured_bitstring = max(counts, key=counts.get)
     decoded_item = decode_bitstring(measured_bitstring, mapping)
     total_shots = sum(counts.values())
-    success_probability = counts.get(mapping.target_binary, 0) / total_shots if total_shots else 0.0
+    if mapping.target_found:
+        success_probability = counts.get(mapping.target_binary, 0) / total_shots if total_shots else 0.0
+        found = decoded_item == mapping.target_item
+    else:
+        success_probability = 0.0
+        found = False
 
     return {
         "measured_bitstring": measured_bitstring,
         "decoded_item": decoded_item,
-        "found": decoded_item == mapping.target_item,
+        "found": found,
         "success_probability": success_probability,
     }
 
@@ -190,6 +213,8 @@ def _extract_mapping_fields(mapping: DatasetMapping | str) -> tuple[str, int, in
             raise ValueError("Target bitstring must contain only 0 and 1.")
         return mapping, len(mapping), 2 ** len(mapping)
 
+    if not mapping.target_found:
+        raise ValueError("Cannot extract a target bitstring because no target state exists.")
     return mapping.target_binary, mapping.n_qubits, mapping.padded_size
 
 

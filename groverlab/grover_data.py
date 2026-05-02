@@ -121,23 +121,58 @@ def encode_index_to_binary(index: int, n_qubits: int) -> str:
     return format(index, f"0{n_qubits}b")
 
 
-def create_dataset_mapping(items: list[str], target_item: str) -> DatasetMapping:
+MISSING_TARGET_ORACLE_WARNING = (
+    "Target item is not present in the dataset. Grover oracle cannot be constructed."
+)
+
+EXPERIMENTAL_NO_SOLUTION_WARNING = (
+    "Experimental no-solution mode: no oracle state will be marked."
+)
+
+
+def create_dataset_mapping(
+    items: list[str],
+    target_item: str,
+    missing_target_mode: str = "stop",
+) -> DatasetMapping:
     """Create a complete dataset-to-quantum-index mapping."""
 
     cleaned_items = clean_items(items)
     target = target_item.strip() if target_item is not None else ""
 
+    if missing_target_mode not in {"stop", "experimental"}:
+        raise ValueError("missing_target_mode must be 'stop' or 'experimental'.")
     if not cleaned_items:
         raise ValueError("Dataset must contain at least one non-empty item.")
     if not target:
         raise ValueError("Target item must not be empty.")
-    if target not in cleaned_items:
-        raise ValueError(f"Target item '{target}' was not found in the dataset.")
 
     warnings = _mapping_warnings(cleaned_items)
     n_items = len(cleaned_items)
     n_qubits = calculate_required_qubits(n_items)
     padded_size = calculate_padded_size(n_qubits)
+
+    if target not in cleaned_items:
+        if missing_target_mode == "stop":
+            warnings.append(MISSING_TARGET_ORACLE_WARNING)
+        else:
+            warnings.append(EXPERIMENTAL_NO_SOLUTION_WARNING)
+
+        return DatasetMapping(
+            original_items=list(items),
+            cleaned_items=cleaned_items,
+            n_items=n_items,
+            padded_size=padded_size,
+            n_qubits=n_qubits,
+            target_item=target,
+            target_found=False,
+            target_index=-1,
+            target_binary="",
+            unused_states=padded_size - n_items,
+            warnings=warnings,
+            missing_target_explanation=get_missing_target_explanation(target, cleaned_items),
+        )
+
     target_index = cleaned_items.index(target)
 
     return DatasetMapping(
@@ -147,10 +182,26 @@ def create_dataset_mapping(items: list[str], target_item: str) -> DatasetMapping
         padded_size=padded_size,
         n_qubits=n_qubits,
         target_item=target,
+        target_found=True,
         target_index=target_index,
         target_binary=encode_index_to_binary(target_index, n_qubits),
         unused_states=padded_size - n_items,
         warnings=warnings,
+        missing_target_explanation=None,
+    )
+
+
+def get_missing_target_explanation(target_item: str, mapping_or_items) -> str:
+    """Explain why a missing target cannot produce a meaningful Grover oracle."""
+
+    return (
+        "Grover’s Algorithm requires a valid oracle that can mark one or more "
+        "solution states. The requested target item is not present in the dataset, "
+        "so no valid marked quantum state can be constructed. Without a marked "
+        "state, no phase inversion occurs, no amplitude amplification occurs, and "
+        "measurement outcomes remain approximately uniformly distributed. In "
+        "practical systems, this validation is usually handled classically before "
+        "constructing the quantum oracle."
     )
 
 
@@ -257,4 +308,3 @@ def _mapping_warnings(cleaned_items: list[str]) -> list[str]:
             f"case-sensitive target matching: {duplicate_text}."
         )
     return warnings
-

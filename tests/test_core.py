@@ -1,4 +1,5 @@
 from qiskit import QuantumCircuit
+import pytest
 
 from groverlab.grover_config import NoiseConfig
 from groverlab.grover_core import (
@@ -89,3 +90,21 @@ def test_statevector_probabilities_are_plain_dict_values():
     assert all(isinstance(key, str) for key in probabilities)
     assert all(isinstance(value, float) for value in probabilities.values())
 
+
+def test_build_grover_circuit_rejects_missing_target_by_default():
+    mapping = create_dataset_mapping(["apple", "banana", "pineapple"], "abc")
+
+    with pytest.raises(ValueError, match="no target state exists"):
+        build_grover_circuit(mapping)
+
+
+def test_build_grover_circuit_allows_no_target_demo():
+    mapping = create_dataset_mapping(
+        ["apple", "banana", "pineapple"],
+        "abc",
+        missing_target_mode="experimental",
+    )
+
+    qc = build_grover_circuit(mapping, allow_no_target=True)
+
+    assert qc.count_ops() == {"h": 2, "measure": 2}
