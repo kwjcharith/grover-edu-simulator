@@ -1,0 +1,15 @@
+.env
+.venv/
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.coverage
+htmlcov/
+.DS_Store
+outputs/plots/*
+outputs/reports/*
+outputs/experiment_logs/*
+!outputs/plots/.gitkeep
+!outputs/reports/.gitkeep
+!outputs/experiment_logs/.gitkeep
+
