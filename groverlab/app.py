@@ -1,5 +1,11 @@
 """Streamlit entry point for standalone local and online GroverLab use."""
 
+import sys
+from pathlib import Path
+
+if __package__ in {None, ""}:
+    sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+
 from groverlab.grover_education import CORE_WARNING, MISCONCEPTION_WARNINGS
 
 
@@ -27,4 +33,3 @@ def main() -> None:
 
 if __name__ == "__main__":
     main()
-
