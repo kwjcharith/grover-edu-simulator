@@ -1,5 +1,5 @@
-from groverlab.grover_config import SimulationConfig
-from groverlab.grover_runner import GroverRunRequest, prepare_run
+from groverlab.grover_config import GroverConfig, NoiseConfig, SimulationConfig
+from groverlab.grover_runner import GroverRunRequest, prepare_run, run_grover_simulation
 
 
 def test_prepare_run_maps_target_to_bitstring():
@@ -15,4 +15,78 @@ def test_prepare_run_maps_target_to_bitstring():
     assert prepared.target_bitstring == "10"
     assert prepared.num_qubits == 2
     assert prepared.iterations == 2
+
+
+def test_ideal_grover_finds_target_for_four_items():
+    config = GroverConfig(
+        dataset_items=["apple", "mango", "banana", "orange"],
+        target_item="banana",
+        shots=128,
+        iterations=1,
+        seed=42,
+    )
+
+    result = run_grover_simulation(config)
+
+    assert result.mapping.target_index == 2
+    assert result.mapping.target_binary == "10"
+    assert result.decoded_item == "banana"
+    assert result.found is True
+    assert result.success_probability > 0.95
+
+
+def test_result_contains_mapping_counts_and_success_probability():
+    config = GroverConfig(
+        dataset_items=["apple", "mango", "banana", "orange"],
+        target_item="banana",
+        shots=64,
+        iterations=1,
+        seed=7,
+    )
+
+    result = run_grover_simulation(config)
+
+    assert result.mapping.cleaned_items == ["apple", "mango", "banana", "orange"]
+    assert result.ideal_counts
+    assert result.ideal_counts == {"10": 64}
+    assert result.success_probability == 1.0
+    assert result.circuit_depth > 0
+    assert result.gate_counts["measure"] == 2
+
+
+def test_result_contains_educational_explanations_and_warnings():
+    config = GroverConfig(
+        dataset_items=["apple", "mango", "banana"],
+        target_item="banana",
+        shots=64,
+        iterations=1,
+        seed=7,
+    )
+
+    result = run_grover_simulation(config)
+
+    assert result.explanation_steps
+    assert result.warnings
+    assert result.mapping.unused_states == 1
+
+
+def test_noisy_simulation_runs_when_enabled():
+    config = GroverConfig(
+        dataset_items=["apple", "mango", "banana", "orange"],
+        target_item="banana",
+        shots=128,
+        iterations=1,
+        seed=42,
+        noise_config=NoiseConfig(
+            noise_enabled=True,
+            depolar_prob=0.01,
+            measurement_error_prob=0.01,
+        ),
+    )
+
+    result = run_grover_simulation(config)
+
+    assert result.noisy_counts is not None
+    assert sum(result.noisy_counts.values()) == 128
+    assert result.noisy_success_probability is not None
 
