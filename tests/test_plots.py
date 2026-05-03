@@ -33,6 +33,20 @@ def test_plot_iteration_sweep_returns_figure():
     assert isinstance(fig, Figure)
 
 
+def test_plot_iteration_sweep_x_axis_adapts_to_large_values():
+    fig = plot_iteration_sweep(
+        [
+            {"iterations": 0, "success_probability": 0.1},
+            {"iterations": 25, "success_probability": 0.8},
+            {"iterations": 50, "success_probability": 0.2},
+        ]
+    )
+
+    left, right = fig.axes[0].get_xlim()
+    assert left <= 0
+    assert right >= 50
+
+
 def test_plot_noise_sweep_returns_figure():
     fig = plot_noise_sweep(
         [
@@ -50,6 +64,32 @@ def test_plot_noise_sweep_returns_figure():
     )
 
     assert isinstance(fig, Figure)
+
+
+def test_plot_noise_sweep_x_axis_adapts_to_large_values():
+    fig = plot_noise_sweep(
+        [
+            {
+                "noise_value": 0.0,
+                "success_probability": 1.0,
+                "noisy_success_probability": 1.0,
+            },
+            {
+                "noise_value": 0.6,
+                "success_probability": 1.0,
+                "noisy_success_probability": 0.2,
+            },
+            {
+                "noise_value": 1.0,
+                "success_probability": 1.0,
+                "noisy_success_probability": 0.0,
+            },
+        ]
+    )
+
+    left, right = fig.axes[0].get_xlim()
+    assert left <= 0
+    assert right >= 1.0
 
 
 def test_plot_classical_vs_grover_returns_figure():
@@ -83,4 +123,3 @@ def test_plot_success_probability_heatmap_returns_figure():
     )
 
     assert isinstance(fig, Figure)
-

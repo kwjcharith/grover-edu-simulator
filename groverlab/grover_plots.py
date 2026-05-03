@@ -51,6 +51,7 @@ def plot_iteration_sweep(results: list[dict[str, Any]], save_path: str | Path | 
     ax.set_title("Grover Iteration Sweep")
     ax.set_xlabel("Grover iterations")
     ax.set_ylabel("Target success probability")
+    _set_adaptive_xlim(ax, iterations)
     ax.set_ylim(0, 1.05)
     ax.grid(alpha=0.25)
     fig.tight_layout()
@@ -75,6 +76,7 @@ def plot_noise_sweep(results: list[dict[str, Any]], save_path: str | Path | None
     ax.set_title("Noise Sweep")
     ax.set_xlabel("Noise probability")
     ax.set_ylabel("Target success probability")
+    _set_adaptive_xlim(ax, noise_values)
     ax.set_ylim(0, 1.05)
     ax.grid(alpha=0.25)
     ax.legend(loc="best")
@@ -177,6 +179,19 @@ def _save_if_requested(fig, save_path: str | Path | None) -> None:
     path = Path(save_path)
     path.parent.mkdir(parents=True, exist_ok=True)
     fig.savefig(path, dpi=150, bbox_inches="tight")
+
+
+def _set_adaptive_xlim(ax, values: list[Any]) -> None:
+    """Set x-axis limits from actual data with a readable margin."""
+
+    numeric_values = [float(value) for value in values]
+    min_value = min(numeric_values)
+    max_value = max(numeric_values)
+    if min_value == max_value:
+        margin = 1.0 if min_value == 0 else abs(min_value) * 0.1
+    else:
+        margin = (max_value - min_value) * 0.08
+    ax.set_xlim(min_value - margin, max_value + margin)
 
 
 def _validate_results(results: list[dict[str, Any]]) -> None:
