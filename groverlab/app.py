@@ -641,6 +641,17 @@ def _config_with_measurement_error(config: GroverConfig, measurement_error: floa
     return replace(config, noise_config=noise_config)
 
 
+def _iteration_sweep_max_iterations(result) -> int:
+    """Choose a sweep range that shows amplification and over-rotation."""
+
+    recommended = recommended_analysis_iterations(result.mapping.n_items)
+    upper_limit = max(6, (3 * recommended) + 3)
+    upper_limit = min(upper_limit, result.mapping.padded_size + recommended)
+    if is_public_demo_mode():
+        upper_limit = min(upper_limit, MAX_PUBLIC_ITERATION_SWEEP_POINTS - 1)
+    return max(2, upper_limit)
+
+
 def _render_explanations(st, result) -> None:
     """Render educational explanations, warnings, and quiz prompts."""
 
@@ -669,9 +680,11 @@ def _render_analysis(st, config: GroverConfig, result) -> None:
         return
 
     st.header("Ideal vs Noisy Iteration Sweep")
-    max_iterations = max(2, min(10, (result.config.iterations or 1) * 2 + 2))
-    if is_public_demo_mode():
-        max_iterations = min(max_iterations, MAX_PUBLIC_ITERATION_SWEEP_POINTS - 1)
+    max_iterations = _iteration_sweep_max_iterations(result)
+    st.caption(
+        "The x-axis is the number of Grover iterations, where one iteration means oracle plus diffuser. "
+        "The curve can rise, fall, and rise again because repeated Grover rotations are periodic; more iterations are not always better."
+    )
     with st.spinner("Running iteration sweep..."):
         iteration_results = run_iteration_sweep(config, max_iterations=max_iterations)
     st.dataframe(pd.DataFrame(iteration_results), width="stretch")
