@@ -188,15 +188,16 @@ def test_plot_classical_vs_grover_uses_log_x_axis():
                 "grover_recommended_iterations": 1,
             },
             {
-                "n_items": 10_000,
-                "classical_worst_case_queries": 10_000,
-                "classical_average_queries": 5_000.5,
-                "grover_recommended_iterations": 78,
+                "n_items": 1_000_000,
+                "classical_worst_case_queries": 1_000_000,
+                "classical_average_queries": 500_000.5,
+                "grover_recommended_iterations": 785,
             },
         ]
     )
 
     assert fig.axes[0].get_xscale() == "log"
+    assert fig.axes[0].get_yscale() == "log"
 
 
 def test_plot_success_probability_heatmap_returns_figure():

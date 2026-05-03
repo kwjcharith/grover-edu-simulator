@@ -905,6 +905,8 @@ def _classical_comparison_sizes(current_dataset_size: int) -> list[int]:
         512,
         1_024,
         10_000,
+        100_000,
+        1_000_000,
         current_dataset_size,
     }
     return sorted(size for size in sizes if size > 0)
@@ -1188,7 +1190,7 @@ def _render_analysis(st, config: GroverConfig, result) -> dict:
 
     st.subheader("Classical vs Grover Comparison")
     st.caption(
-        "This is a theoretical query-scaling comparison on a logarithmic dataset-size axis. "
+        "This is a theoretical query-scaling comparison on logarithmic axes. "
         "It can include very large datasets because it does not build or simulate those quantum circuits."
     )
     comparison = [
