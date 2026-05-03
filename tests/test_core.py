@@ -69,6 +69,26 @@ def test_noisy_simulation_returns_counts_when_noise_enabled():
     assert sum(counts.values()) == 128
 
 
+def test_zero_noise_enabled_matches_ideal_simulation():
+    mapping = create_dataset_mapping(["apple", "mango", "banana", "orange"], "banana")
+    qc = build_grover_circuit(mapping, iterations=1)
+
+    ideal_counts = run_ideal_simulation(qc, shots=128, seed=42)
+    noisy_counts = run_noisy_simulation(
+        qc,
+        shots=128,
+        noise_config=NoiseConfig(
+            noise_enabled=True,
+            depolar_prob=0.0,
+            measurement_error_prob=0.0,
+            gate_error_prob=0.0,
+        ),
+        seed=42,
+    )
+
+    assert noisy_counts == ideal_counts
+
+
 def test_decode_result_reports_target_success_probability():
     mapping = create_dataset_mapping(["apple", "mango", "banana", "orange"], "banana")
 

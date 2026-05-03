@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from dataclasses import replace
 import sys
 import tempfile
 from pathlib import Path
@@ -606,6 +607,40 @@ def _probabilities(counts: dict[str, int]) -> dict[str, float]:
     return {state: count / total for state, count in counts.items()}
 
 
+def _depolarising_sweep_values(selected_depolar_prob: float, max_points: int = 8) -> list[float]:
+    """Return evenly spaced depolarising-noise values from 0 to selected value."""
+
+    points = max(2, max_points)
+    if selected_depolar_prob <= 0:
+        return [0.0]
+    return [
+        round((selected_depolar_prob * index) / (points - 1), 6)
+        for index in range(points)
+    ]
+
+
+def _measurement_error_scenarios(selected_measurement_error: float) -> list[tuple[str, float]]:
+    """Return the three readout-error scenarios used in the noise sweep."""
+
+    half_selected = selected_measurement_error * 0.5
+    return [
+        ("Measurement error = 0", 0.0),
+        ("Measurement error = 0.5 x selected", half_selected),
+        ("Measurement error = selected", selected_measurement_error),
+    ]
+
+
+def _config_with_measurement_error(config: GroverConfig, measurement_error: float) -> GroverConfig:
+    """Return a sweep config with fixed measurement error and enabled noise."""
+
+    noise_config = replace(
+        config.noise_config,
+        noise_enabled=True,
+        measurement_error_prob=measurement_error,
+    )
+    return replace(config, noise_config=noise_config)
+
+
 def _render_explanations(st, result) -> None:
     """Render educational explanations, warnings, and quiz prompts."""
 
@@ -643,13 +678,28 @@ def _render_analysis(st, config: GroverConfig, result) -> None:
     st.pyplot(plot_iteration_sweep(iteration_results))
 
     st.header("Noise Sweep")
-    noise_values = sorted({0.0, 0.001, 0.005, 0.01, 0.03, 0.07, config.noise_config.depolar_prob})
-    if is_public_demo_mode():
-        noise_values = noise_values[:MAX_PUBLIC_NOISE_SWEEP_POINTS]
-    with st.spinner("Running noise sweep..."):
-        noise_results = run_noise_sweep(config, noise_values=noise_values)
-    st.dataframe(pd.DataFrame(noise_results), width="stretch")
-    st.pyplot(plot_noise_sweep(noise_results))
+    sweep_points = MAX_PUBLIC_NOISE_SWEEP_POINTS if is_public_demo_mode() else 8
+    noise_values = _depolarising_sweep_values(
+        config.noise_config.depolar_prob,
+        max_points=sweep_points,
+    )
+    st.caption(
+        "Depolarising noise is swept evenly from 0 to the selected depolarising-noise value. "
+        "Three readout-error scenarios are shown: 0, half the selected measurement error, and the selected measurement error."
+    )
+
+    scenarios = _measurement_error_scenarios(config.noise_config.measurement_error_prob)
+    columns = st.columns(3)
+    for column, (label, measurement_error) in zip(columns, scenarios):
+        scenario_config = _config_with_measurement_error(config, measurement_error)
+        with column:
+            st.subheader(label)
+            st.caption(f"Fixed measurement error: {measurement_error:.4f}")
+            with st.spinner("Running noise sweep..."):
+                noise_results = run_noise_sweep(scenario_config, noise_values=noise_values)
+            st.pyplot(plot_noise_sweep(noise_results))
+            with st.expander("Sweep data"):
+                st.dataframe(pd.DataFrame(noise_results), width="stretch")
 
     st.header("Classical vs Grover Comparison")
     comparison = compare_classical_vs_grover(result.mapping.n_items)

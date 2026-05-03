@@ -1,11 +1,9 @@
+streamlit
 qiskit
 qiskit-aer
-streamlit
-fastapi
-uvicorn
 numpy
 pandas
 matplotlib
-pytest
+fastapi
+uvicorn
 pydantic
-

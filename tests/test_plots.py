@@ -7,6 +7,7 @@ from matplotlib.figure import Figure
 from groverlab.grover_plots import (
     plot_classical_vs_grover,
     plot_counts_histogram,
+    plot_counts_probability_comparison,
     plot_iteration_sweep,
     plot_noise_sweep,
     plot_success_probability_heatmap,
@@ -31,6 +32,25 @@ def test_plot_iteration_sweep_returns_figure():
     )
 
     assert isinstance(fig, Figure)
+
+
+def test_plot_iteration_sweep_includes_noisy_curve_when_available():
+    fig = plot_iteration_sweep(
+        [
+            {
+                "iterations": 0,
+                "success_probability": 0.25,
+                "noisy_success_probability": 0.24,
+            },
+            {
+                "iterations": 1,
+                "success_probability": 1.0,
+                "noisy_success_probability": 0.82,
+            },
+        ]
+    )
+
+    assert len(fig.axes[0].lines) == 2
 
 
 def test_plot_iteration_sweep_x_axis_adapts_to_large_values():
@@ -64,6 +84,31 @@ def test_plot_noise_sweep_returns_figure():
     )
 
     assert isinstance(fig, Figure)
+
+
+def test_plot_counts_probability_comparison_returns_figure():
+    fig = plot_counts_probability_comparison(
+        ideal_counts={"00": 1, "10": 99},
+        noisy_counts={"00": 20, "01": 15, "10": 65},
+        target_binary="10",
+    )
+
+    assert isinstance(fig, Figure)
+    assert len(fig.axes) == 2
+
+
+def test_plot_counts_probability_comparison_uses_adaptive_noisy_y_axis():
+    fig = plot_counts_probability_comparison(
+        ideal_counts={"00": 1, "10": 999},
+        noisy_counts={"00": 3, "01": 2, "10": 4, "11": 1},
+        target_binary="10",
+    )
+
+    ideal_top = fig.axes[0].get_ylim()[1]
+    noisy_top = fig.axes[1].get_ylim()[1]
+    assert ideal_top == 1.05
+    assert noisy_top < ideal_top
+    assert noisy_top >= 0.4
 
 
 def test_plot_noise_sweep_x_axis_adapts_to_large_values():
