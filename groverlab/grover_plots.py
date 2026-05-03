@@ -8,6 +8,11 @@ from typing import Any
 import matplotlib.pyplot as plt
 
 
+TARGET_COLOR = "#D1495B"
+MEASURED_STATE_COLOR = "#2E86AB"
+NOISY_MOST_LIKELY_COLOR = "#F4A261"
+
+
 def plot_counts_histogram(
     counts: dict[str, int],
     target_binary: str,
@@ -20,7 +25,7 @@ def plot_counts_histogram(
     labels = sorted(counts)
     values = [counts[label] for label in labels]
     colors = [
-        "#D1495B" if target_binary and label == target_binary else "#2E86AB"
+        TARGET_COLOR if target_binary and label == target_binary else MEASURED_STATE_COLOR
         for label in labels
     ]
 
@@ -30,9 +35,9 @@ def plot_counts_histogram(
     ax.set_xlabel("Measured bitstring")
     ax.set_ylabel("Counts")
     ax.grid(axis="y", alpha=0.25)
-    handles = [plt.Rectangle((0, 0), 1, 1, color="#2E86AB", label="Measured states")]
+    handles = [plt.Rectangle((0, 0), 1, 1, color=MEASURED_STATE_COLOR, label="Measured states")]
     if target_binary:
-        handles.insert(0, plt.Rectangle((0, 0), 1, 1, color="#D1495B", label="Target"))
+        handles.insert(0, plt.Rectangle((0, 0), 1, 1, color=TARGET_COLOR, label="Target"))
     ax.legend(handles=handles, loc="best")
     fig.tight_layout()
     _save_if_requested(fig, save_path)
@@ -87,15 +92,14 @@ def plot_counts_probability_comparison(
     labels = _comparison_labels(ideal_counts, noisy_counts, target_binary)
     ideal_probabilities = _probabilities_for_labels(ideal_counts, labels)
     noisy_probabilities = _probabilities_for_labels(noisy_counts, labels)
-    colors = [
-        "#D1495B" if target_binary and label == target_binary else "#2E86AB"
-        for label in labels
-    ]
+    noisy_most_likely = max(noisy_counts, key=noisy_counts.get)
+    ideal_colors = _comparison_bar_colors(labels, target_binary)
+    noisy_colors = _comparison_bar_colors(labels, target_binary, noisy_most_likely)
 
     fig, axes = plt.subplots(1, 2, figsize=(13, 4.8), sharey=False)
-    for ax, title, probabilities in (
-        (axes[0], "Ideal Simulation", ideal_probabilities),
-        (axes[1], "Noisy Simulation (Adaptive Y-Axis)", noisy_probabilities),
+    for ax, title, probabilities, colors in (
+        (axes[0], "Ideal Simulation", ideal_probabilities, ideal_colors),
+        (axes[1], "Noisy Simulation (Adaptive Y-Axis)", noisy_probabilities, noisy_colors),
     ):
         ax.bar(labels, probabilities, color=colors)
         ax.set_title(title)
@@ -107,10 +111,10 @@ def plot_counts_probability_comparison(
     axes[1].set_ylim(0, _adaptive_probability_upper_limit(noisy_probabilities))
     axes[0].set_ylabel("Measurement probability")
     axes[1].set_ylabel("Measurement probability")
-    handles = [plt.Rectangle((0, 0), 1, 1, color="#2E86AB", label="Measured states")]
-    if target_binary:
-        handles.insert(0, plt.Rectangle((0, 0), 1, 1, color="#D1495B", label="Target"))
-    axes[1].legend(handles=handles, loc="best")
+    axes[1].legend(
+        handles=_comparison_legend_handles(target_binary, noisy_most_likely),
+        loc="best",
+    )
     fig.suptitle("Final Measurement Probability Comparison")
     fig.tight_layout()
     _save_if_requested(fig, save_path)
@@ -271,6 +275,38 @@ def _probabilities_for_labels(counts: dict[str, int], labels: list[str]) -> list
     if total <= 0:
         raise ValueError("Measurement counts must sum to a positive value.")
     return [counts.get(label, 0) / total for label in labels]
+
+
+def _comparison_bar_colors(
+    labels: list[str],
+    target_binary: str,
+    noisy_most_likely: str | None = None,
+) -> list[str]:
+    """Color target and optional noisy most-likely states distinctly."""
+
+    colors: list[str] = []
+    for label in labels:
+        if target_binary and label == target_binary:
+            colors.append(TARGET_COLOR)
+        elif noisy_most_likely and label == noisy_most_likely:
+            colors.append(NOISY_MOST_LIKELY_COLOR)
+        else:
+            colors.append(MEASURED_STATE_COLOR)
+    return colors
+
+
+def _comparison_legend_handles(target_binary: str, noisy_most_likely: str) -> list:
+    """Build a legend for target and noisy most-likely highlighting."""
+
+    handles = [plt.Rectangle((0, 0), 1, 1, color=MEASURED_STATE_COLOR, label="Measured states")]
+    if target_binary:
+        handles.insert(0, plt.Rectangle((0, 0), 1, 1, color=TARGET_COLOR, label="Target state"))
+    if noisy_most_likely != target_binary:
+        handles.insert(
+            1 if target_binary else 0,
+            plt.Rectangle((0, 0), 1, 1, color=NOISY_MOST_LIKELY_COLOR, label="Noisy most likely"),
+        )
+    return handles
 
 
 def _adaptive_probability_upper_limit(probabilities: list[float]) -> float:

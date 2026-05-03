@@ -2,9 +2,12 @@ import matplotlib
 
 matplotlib.use("Agg")
 
+from matplotlib.colors import to_rgba
 from matplotlib.figure import Figure
 
 from groverlab.grover_plots import (
+    NOISY_MOST_LIKELY_COLOR,
+    TARGET_COLOR,
     plot_classical_vs_grover,
     plot_counts_histogram,
     plot_counts_probability_comparison,
@@ -109,6 +112,18 @@ def test_plot_counts_probability_comparison_uses_adaptive_noisy_y_axis():
     assert ideal_top == 1.05
     assert noisy_top < ideal_top
     assert noisy_top >= 0.4
+
+
+def test_plot_counts_probability_comparison_highlights_noisy_most_likely_state():
+    fig = plot_counts_probability_comparison(
+        ideal_counts={"00": 1, "10": 99},
+        noisy_counts={"00": 70, "10": 30},
+        target_binary="10",
+    )
+
+    noisy_bar_colors = [patch.get_facecolor() for patch in fig.axes[1].patches]
+    assert to_rgba(NOISY_MOST_LIKELY_COLOR) in noisy_bar_colors
+    assert to_rgba(TARGET_COLOR) in noisy_bar_colors
 
 
 def test_plot_noise_sweep_x_axis_adapts_to_large_values():
