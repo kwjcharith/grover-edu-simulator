@@ -141,6 +141,9 @@ def run_noisy_simulation(
     """Run a noisy shot-based simulation, or return None when noise is disabled."""
 
     _validate_shots(shots)
+    if noise_config.noise_enabled and _has_zero_noise(noise_config):
+        return run_ideal_simulation(qc, shots=shots, seed=seed)
+
     noise_model = build_noise_model(noise_config)
     if noise_model is None:
         return None
@@ -272,3 +275,13 @@ def _combined_probability(first: float, second: float) -> float:
 
     combined = 1 - ((1 - first) * (1 - second))
     return max(0.0, min(1.0, combined))
+
+
+def _has_zero_noise(noise_config: NoiseConfig) -> bool:
+    """Return whether an enabled noisy run has no active error channels."""
+
+    return (
+        noise_config.depolar_prob == 0
+        and noise_config.gate_error_prob == 0
+        and noise_config.measurement_error_prob == 0
+    )

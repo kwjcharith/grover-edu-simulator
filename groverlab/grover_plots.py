@@ -40,20 +40,78 @@ def plot_counts_histogram(
 
 
 def plot_iteration_sweep(results: list[dict[str, Any]], save_path: str | Path | None = None):
-    """Plot success probability across Grover iteration counts."""
+    """Plot ideal and optional noisy success probabilities across iterations."""
 
     _validate_results(results)
     iterations = [_require_key(row, "iterations") for row in results]
     success = [_require_key(row, "success_probability") for row in results]
+    noisy_success = [row.get("noisy_success_probability") for row in results]
+    has_noisy_curve = any(value is not None for value in noisy_success)
 
     fig, ax = plt.subplots(figsize=(8, 4.5))
-    ax.plot(iterations, success, marker="o", color="#2E86AB", linewidth=2)
-    ax.set_title("Grover Iteration Sweep")
+    ax.plot(iterations, success, marker="o", color="#2E86AB", linewidth=2, label="Ideal")
+    if has_noisy_curve:
+        ax.plot(
+            iterations,
+            [0.0 if value is None else value for value in noisy_success],
+            marker="s",
+            color="#D1495B",
+            linewidth=2,
+            label="Noisy",
+        )
+        ax.legend(loc="best")
+    ax.set_title("Ideal vs Noisy Grover Iteration Sweep")
     ax.set_xlabel("Grover iterations")
     ax.set_ylabel("Target success probability")
     _set_adaptive_xlim(ax, iterations)
     ax.set_ylim(0, 1.05)
     ax.grid(alpha=0.25)
+    fig.tight_layout()
+    _save_if_requested(fig, save_path)
+    return fig
+
+
+def plot_counts_probability_comparison(
+    ideal_counts: dict[str, int],
+    noisy_counts: dict[str, int],
+    target_binary: str,
+    save_path: str | Path | None = None,
+):
+    """Plot side-by-side ideal and noisy measurement probabilities."""
+
+    if not ideal_counts:
+        raise ValueError("Ideal measurement counts cannot be empty.")
+    if not noisy_counts:
+        raise ValueError("Noisy measurement counts cannot be empty.")
+
+    labels = _comparison_labels(ideal_counts, noisy_counts, target_binary)
+    ideal_probabilities = _probabilities_for_labels(ideal_counts, labels)
+    noisy_probabilities = _probabilities_for_labels(noisy_counts, labels)
+    colors = [
+        "#D1495B" if target_binary and label == target_binary else "#2E86AB"
+        for label in labels
+    ]
+
+    fig, axes = plt.subplots(1, 2, figsize=(13, 4.8), sharey=False)
+    for ax, title, probabilities in (
+        (axes[0], "Ideal Simulation", ideal_probabilities),
+        (axes[1], "Noisy Simulation (Adaptive Y-Axis)", noisy_probabilities),
+    ):
+        ax.bar(labels, probabilities, color=colors)
+        ax.set_title(title)
+        ax.set_xlabel("Measured bitstring")
+        ax.grid(axis="y", alpha=0.25)
+        ax.tick_params(axis="x", rotation=45)
+
+    axes[0].set_ylim(0, 1.05)
+    axes[1].set_ylim(0, _adaptive_probability_upper_limit(noisy_probabilities))
+    axes[0].set_ylabel("Measurement probability")
+    axes[1].set_ylabel("Measurement probability")
+    handles = [plt.Rectangle((0, 0), 1, 1, color="#2E86AB", label="Measured states")]
+    if target_binary:
+        handles.insert(0, plt.Rectangle((0, 0), 1, 1, color="#D1495B", label="Target"))
+    axes[1].legend(handles=handles, loc="best")
+    fig.suptitle("Final Measurement Probability Comparison")
     fig.tight_layout()
     _save_if_requested(fig, save_path)
     return fig
@@ -179,6 +237,51 @@ def _save_if_requested(fig, save_path: str | Path | None) -> None:
     path = Path(save_path)
     path.parent.mkdir(parents=True, exist_ok=True)
     fig.savefig(path, dpi=150, bbox_inches="tight")
+
+
+def _comparison_labels(
+    ideal_counts: dict[str, int],
+    noisy_counts: dict[str, int],
+    target_binary: str,
+    top_n: int = 14,
+) -> list[str]:
+    """Choose readable comparison states, always retaining the target."""
+
+    all_labels = set(ideal_counts) | set(noisy_counts)
+    ranked = sorted(
+        all_labels,
+        key=lambda label: max(ideal_counts.get(label, 0), noisy_counts.get(label, 0)),
+        reverse=True,
+    )
+    labels: list[str] = []
+    if target_binary:
+        labels.append(target_binary)
+    for label in ranked:
+        if label not in labels:
+            labels.append(label)
+        if len(labels) >= top_n:
+            break
+    return sorted(labels)
+
+
+def _probabilities_for_labels(counts: dict[str, int], labels: list[str]) -> list[float]:
+    """Convert counts into probabilities for a fixed label order."""
+
+    total = sum(counts.values())
+    if total <= 0:
+        raise ValueError("Measurement counts must sum to a positive value.")
+    return [counts.get(label, 0) / total for label in labels]
+
+
+def _adaptive_probability_upper_limit(probabilities: list[float]) -> float:
+    """Return a readable y-axis upper limit for flattened noisy distributions."""
+
+    max_probability = max(probabilities, default=0.0)
+    if max_probability <= 0:
+        return 1.0
+    if max_probability >= 0.8:
+        return 1.05
+    return min(1.05, max(0.01, max_probability * 1.25))
 
 
 def _set_adaptive_xlim(ax, values: list[Any]) -> None:
