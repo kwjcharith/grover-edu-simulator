@@ -12,7 +12,7 @@ if __package__ in {None, ""}:
 import pandas as pd
 import streamlit as st
 
-from deployment_config import (
+from groverlab.deployment_config import (
     ALLOW_LARGE_DATASET_UPLOAD_ONLINE,
     ALLOW_NOISY_SIMULATION_ONLINE,
     MAX_PUBLIC_DATASET_SIZE,
