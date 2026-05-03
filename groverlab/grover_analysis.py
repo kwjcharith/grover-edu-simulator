@@ -3,11 +3,21 @@
 from __future__ import annotations
 
 from dataclasses import replace
-from math import floor, pi, sqrt
+from math import asin, floor, pi, sin, sqrt
 from typing import Any
 
 from groverlab.grover_config import GroverConfig, GroverResult, NoiseConfig
+from groverlab.grover_core import decoherence_probabilities
 from groverlab.grover_data import calculate_padded_size, calculate_required_qubits
+
+
+DECOHERENCE_ITERATION_PRESETS = {
+    "Ideal": {"t1_relaxation_us": 500.0, "t2_coherence_us": 300.0},
+    "Low decoherence": {"t1_relaxation_us": 250.0, "t2_coherence_us": 150.0},
+    "Medium decoherence": {"t1_relaxation_us": 120.0, "t2_coherence_us": 80.0},
+    "High decoherence": {"t1_relaxation_us": 50.0, "t2_coherence_us": 30.0},
+    "Extreme decoherence": {"t1_relaxation_us": 15.0, "t2_coherence_us": 10.0},
+}
 
 
 def recommended_iterations(n_items: int, n_solutions: int = 1) -> int:
@@ -85,11 +95,266 @@ def run_noise_sweep(config: GroverConfig, noise_values: list[float]) -> list[dic
             depolar_prob=noise_value,
             measurement_error_prob=config.noise_config.measurement_error_prob,
             gate_error_prob=config.noise_config.gate_error_prob,
+            t1_relaxation_us=config.noise_config.t1_relaxation_us,
+            t2_coherence_us=config.noise_config.t2_coherence_us,
         )
         run_config = replace(config, noise_config=noise_config)
         result = run_grover_simulation(run_config)
         results.append(_result_summary(result, {"noise_value": noise_value}))
     return results
+
+
+def run_decoherence_iteration_overlay(
+    config: GroverConfig,
+    max_iterations: int,
+) -> list[dict[str, Any]]:
+    """Run iteration sweeps for standard T1/T2 decoherence scenarios."""
+
+    rows: list[dict[str, Any]] = []
+    for scenario, values in DECOHERENCE_ITERATION_PRESETS.items():
+        noise_config = NoiseConfig(
+            noise_enabled=True,
+            depolar_prob=0.0,
+            measurement_error_prob=0.0,
+            gate_error_prob=0.0,
+            t1_relaxation_us=values["t1_relaxation_us"],
+            t2_coherence_us=values["t2_coherence_us"],
+        )
+        scenario_config = replace(config, noise_config=noise_config)
+        for row in run_iteration_sweep(scenario_config, max_iterations=max_iterations):
+            rows.append(
+                {
+                    **row,
+                    "scenario": scenario,
+                    "t1_relaxation_us": values["t1_relaxation_us"],
+                    "t2_coherence_us": values["t2_coherence_us"],
+                    "target_probability": (
+                        row["success_probability"]
+                        if scenario == "Ideal"
+                        else row.get("noisy_success_probability", row["success_probability"])
+                    ),
+                }
+            )
+    return rows
+
+
+def ideal_grover_sweep_curves(
+    sizes: list[int],
+    max_iterations: int,
+) -> list[dict[str, Any]]:
+    """Generate analytical ideal Grover probability curves for dataset sizes."""
+
+    rows: list[dict[str, Any]] = []
+    for size in sizes:
+        if size < 1:
+            raise ValueError("Sweep sizes must be positive.")
+        n_qubits = calculate_required_qubits(size)
+        search_space = calculate_padded_size(n_qubits)
+        theta = asin(sqrt(1 / search_space))
+        recommended = recommended_iterations(size)
+        for iteration in range(max_iterations + 1):
+            probability = sin(((2 * iteration) + 1) * theta) ** 2
+            rows.append(
+                {
+                    "scenario": f"N={search_space}",
+                    "dataset_size": size,
+                    "n_qubits": n_qubits,
+                    "padded_size": search_space,
+                    "iterations": iteration,
+                    "target_probability": probability,
+                    "recommended_iteration": recommended,
+                }
+            )
+    return rows
+
+
+def run_noisy_condition_iteration_overlay(
+    config: GroverConfig,
+    max_iterations: int,
+) -> list[dict[str, Any]]:
+    """Run noisy iteration overlays for low-to-extreme NISQ conditions."""
+
+    scenarios = {
+        "Low noise": NoiseConfig(
+            noise_enabled=True,
+            depolar_prob=0.0003,
+            measurement_error_prob=0.005,
+            t1_relaxation_us=250.0,
+            t2_coherence_us=150.0,
+        ),
+        "Medium noise": NoiseConfig(
+            noise_enabled=True,
+            depolar_prob=0.001,
+            measurement_error_prob=0.01,
+            t1_relaxation_us=120.0,
+            t2_coherence_us=80.0,
+        ),
+        "High noise": NoiseConfig(
+            noise_enabled=True,
+            depolar_prob=0.005,
+            measurement_error_prob=0.02,
+            t1_relaxation_us=50.0,
+            t2_coherence_us=30.0,
+        ),
+        "Extreme noise": NoiseConfig(
+            noise_enabled=True,
+            depolar_prob=0.03,
+            measurement_error_prob=0.05,
+            t1_relaxation_us=15.0,
+            t2_coherence_us=10.0,
+        ),
+        "Selected setting": replace(config.noise_config, noise_enabled=True),
+    }
+    return _run_noise_overlay_scenarios(config, scenarios, max_iterations)
+
+
+def run_t1_iteration_overlay(
+    config: GroverConfig,
+    t1_values: list[float],
+    max_iterations: int,
+) -> list[dict[str, Any]]:
+    """Run iteration overlays that vary T1 and keep other noise settings fixed."""
+
+    scenarios: dict[str, NoiseConfig] = {}
+    for t1 in t1_values:
+        t2 = min(config.noise_config.t2_coherence_us, min(300.0, 2 * t1))
+        scenarios[f"T1={t1:g} µs"] = replace(
+            config.noise_config,
+            noise_enabled=True,
+            t1_relaxation_us=t1,
+            t2_coherence_us=t2,
+        )
+    return _run_noise_overlay_scenarios(config, scenarios, max_iterations)
+
+
+def run_t2_iteration_overlay(
+    config: GroverConfig,
+    t2_values: list[float],
+    max_iterations: int,
+) -> list[dict[str, Any]]:
+    """Run iteration overlays that vary T2 and keep other noise settings fixed."""
+
+    scenarios: dict[str, NoiseConfig] = {}
+    max_t2 = min(300.0, 2 * config.noise_config.t1_relaxation_us)
+    for t2 in t2_values:
+        adjusted_t2 = min(t2, max_t2)
+        scenarios[f"T2={adjusted_t2:g} µs"] = replace(
+            config.noise_config,
+            noise_enabled=True,
+            t2_coherence_us=adjusted_t2,
+        )
+    return _run_noise_overlay_scenarios(config, scenarios, max_iterations)
+
+
+def run_t1_sweep(config: GroverConfig, t1_values: list[float]) -> list[dict[str, Any]]:
+    """Vary T1 while keeping T2, depolarising, and measurement settings fixed."""
+
+    return _run_coherence_sweep(config, t1_values, varying="t1")
+
+
+def run_t2_sweep(config: GroverConfig, t2_values: list[float]) -> list[dict[str, Any]]:
+    """Vary T2 while keeping T1, depolarising, and measurement settings fixed."""
+
+    return _run_coherence_sweep(config, t2_values, varying="t2")
+
+
+def probability_loss_by_iteration(iteration_results: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """Calculate Delta P = P_ideal - P_noisy for iteration results."""
+
+    rows: list[dict[str, Any]] = []
+    for row in iteration_results:
+        noisy = row.get("noisy_success_probability")
+        if noisy is None:
+            continue
+        ideal = row["success_probability"]
+        rows.append(
+            {
+                "iterations": row["iterations"],
+                "probability_loss": ideal - noisy,
+                "success_probability": ideal,
+                "noisy_success_probability": noisy,
+            }
+        )
+    return rows
+
+
+def build_research_summary(
+    result: GroverResult,
+    iteration_results: list[dict[str, Any]],
+) -> dict[str, Any]:
+    """Build a compact NISQ robustness summary table row."""
+
+    ideal_peak = max(iteration_results, key=lambda row: row.get("success_probability", 0.0))
+    noisy_candidates = [
+        row for row in iteration_results if row.get("noisy_success_probability") is not None
+    ]
+    noisy_peak = (
+        max(noisy_candidates, key=lambda row: row.get("noisy_success_probability", 0.0))
+        if noisy_candidates
+        else None
+    )
+    noisy_probability = (
+        noisy_peak.get("noisy_success_probability", 0.0)
+        if noisy_peak is not None
+        else result.noisy_success_probability
+    )
+    ideal_probability = ideal_peak.get("success_probability", result.success_probability)
+    probabilities = decoherence_probabilities(result.config.noise_config)
+
+    return {
+        "dataset_size": result.mapping.n_items,
+        "qubits": result.mapping.n_qubits,
+        "padded_states": result.mapping.padded_size,
+        "circuit_depth": result.circuit_depth,
+        "total_gates": sum(int(value) for value in result.gate_counts.values()),
+        "ideal_peak_iteration": ideal_peak.get("iterations"),
+        "noisy_peak_iteration": noisy_peak.get("iterations") if noisy_peak else None,
+        "ideal_peak_probability": ideal_probability,
+        "noisy_peak_probability": noisy_probability,
+        "probability_degradation": (
+            ideal_probability - noisy_probability if noisy_probability is not None else None
+        ),
+        "t1_relaxation_us": result.config.noise_config.t1_relaxation_us,
+        "t2_coherence_us": result.config.noise_config.t2_coherence_us,
+        "t_phi_us": probabilities["t_phi_us"],
+        "dominant_noise_type": dominant_noise_type(result.config.noise_config),
+    }
+
+
+def dominant_noise_type(noise_config: NoiseConfig) -> str:
+    """Return a simple dominant-noise label for interpretation."""
+
+    probabilities = decoherence_probabilities(noise_config)
+    candidates = {
+        "Depolarising": noise_config.depolar_prob,
+        "Measurement error": noise_config.measurement_error_prob,
+        "T1 relaxation": probabilities["amplitude_damping_probability"],
+        "T2 pure dephasing": probabilities["pure_dephasing_probability"],
+    }
+    return max(candidates, key=candidates.get)
+
+
+def scalability_analysis(sizes: list[int]) -> list[dict[str, Any]]:
+    """Estimate qubit, depth, and gate growth for representative dataset sizes."""
+
+    rows: list[dict[str, Any]] = []
+    for size in sizes:
+        n_qubits = calculate_required_qubits(size)
+        padded_size = calculate_padded_size(n_qubits)
+        iterations = recommended_iterations(size)
+        estimated_depth = 1 + iterations * ((4 * n_qubits) + 3)
+        estimated_total_gates = n_qubits + iterations * ((6 * n_qubits) + 4) + n_qubits
+        rows.append(
+            {
+                "dataset_size": size,
+                "n_qubits": n_qubits,
+                "padded_size": padded_size,
+                "recommended_iterations": iterations,
+                "estimated_circuit_depth": estimated_depth,
+                "estimated_total_gates": estimated_total_gates,
+            }
+        )
+    return rows
 
 
 def run_size_sweep(
@@ -231,3 +496,72 @@ def _items_for_size(base_items: list[str], target_item: str, size: int) -> list[
         items[-1] = target_item
     return items
 
+
+def _run_coherence_sweep(
+    config: GroverConfig,
+    values: list[float],
+    varying: str,
+) -> list[dict[str, Any]]:
+    """Shared implementation for T1 and T2 sweeps."""
+
+    from groverlab.grover_runner import run_grover_simulation
+
+    rows: list[dict[str, Any]] = []
+    for value in values:
+        if varying == "t1":
+            t1 = value
+            t2 = min(config.noise_config.t2_coherence_us, min(300.0, 2 * t1))
+        else:
+            t1 = config.noise_config.t1_relaxation_us
+            t2 = min(value, min(300.0, 2 * t1))
+
+        noise_config = replace(
+            config.noise_config,
+            noise_enabled=True,
+            t1_relaxation_us=t1,
+            t2_coherence_us=t2,
+        )
+        result = run_grover_simulation(replace(config, noise_config=noise_config))
+        key = "t1_relaxation_us" if varying == "t1" else "t2_coherence_us"
+        rows.append(
+            _result_summary(
+                result,
+                {
+                    key: value,
+                    "t1_relaxation_us": t1,
+                    "t2_coherence_us": t2,
+                },
+            )
+        )
+    return rows
+
+
+def _run_noise_overlay_scenarios(
+    config: GroverConfig,
+    scenarios: dict[str, NoiseConfig],
+    max_iterations: int,
+) -> list[dict[str, Any]]:
+    """Run noisy iteration curves for named noise scenarios."""
+
+    rows: list[dict[str, Any]] = []
+    for scenario, noise_config in scenarios.items():
+        scenario_config = replace(config, noise_config=noise_config)
+        for row in run_iteration_sweep(scenario_config, max_iterations=max_iterations):
+            rows.append(
+                {
+                    **row,
+                    "scenario": scenario,
+                    "target_probability": row.get(
+                        "noisy_success_probability",
+                        row["success_probability"],
+                    ),
+                    "recommended_iteration": recommended_iterations(
+                        len(config.dataset_items)
+                    ),
+                    "t1_relaxation_us": noise_config.t1_relaxation_us,
+                    "t2_coherence_us": noise_config.t2_coherence_us,
+                    "depolar_prob": noise_config.depolar_prob,
+                    "measurement_error_prob": noise_config.measurement_error_prob,
+                }
+            )
+    return rows

@@ -32,6 +32,7 @@ LEARNING_OUTCOMES = [
     "Explain probabilistic measurement.",
     "Explain over-rotation.",
     "Explain noise effects.",
+    "Explain T1 relaxation and T2 dephasing effects.",
 ]
 
 
@@ -171,12 +172,13 @@ def explain_noise(noise_config: NoiseConfig) -> str:
         )
 
     return (
-        "Noise is enabled. Depolarizing noise can randomize quantum states, gate "
-        "error can disturb circuit operations, and measurement error can flip the "
-        "reported classical bit. These effects can reduce or destroy the quantum "
-        f"advantage. Current settings: depolarizing={noise_config.depolar_prob:.3f}, "
-        f"gate={noise_config.gate_error_prob:.3f}, measurement="
-        f"{noise_config.measurement_error_prob:.3f}."
+        "Noise is enabled. Depolarizing noise can randomize quantum states, T1 "
+        "relaxation can decay |1> amplitudes toward |0>, T2 dephasing can weaken "
+        "the phase coherence needed for Grover interference, and measurement error "
+        "can flip the reported classical bit. These effects can reduce or destroy "
+        f"the quantum advantage. Current settings: depolarizing={noise_config.depolar_prob:.3f}, "
+        f"gate={noise_config.gate_error_prob:.3f}, measurement={noise_config.measurement_error_prob:.3f}, "
+        f"T1={noise_config.t1_relaxation_us:.1f} µs, T2={noise_config.t2_coherence_us:.1f} µs."
     )
 
 

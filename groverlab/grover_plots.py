@@ -147,6 +147,176 @@ def plot_noise_sweep(results: list[dict[str, Any]], save_path: str | Path | None
     return fig
 
 
+def plot_decoherence_iteration_overlay(
+    results: list[dict[str, Any]],
+    save_path: str | Path | None = None,
+):
+    """Plot target probability across iterations for multiple T1/T2 scenarios."""
+
+    _validate_results(results)
+    fig, ax = plt.subplots(figsize=(9, 5))
+    scenarios = list(dict.fromkeys(row["scenario"] for row in results))
+    for scenario in scenarios:
+        rows = [row for row in results if row["scenario"] == scenario]
+        iterations = [_require_key(row, "iterations") for row in rows]
+        probabilities = [_require_key(row, "target_probability") for row in rows]
+        ax.plot(iterations, probabilities, marker="o", linewidth=2, label=scenario)
+        peak_index = max(range(len(probabilities)), key=probabilities.__getitem__)
+        ax.scatter(
+            [iterations[peak_index]],
+            [probabilities[peak_index]],
+            s=55,
+            zorder=4,
+        )
+        ax.annotate(
+            f"k={iterations[peak_index]}\nP={probabilities[peak_index]:.2f}",
+            (iterations[peak_index], probabilities[peak_index]),
+            textcoords="offset points",
+            xytext=(4, 5),
+            fontsize=8,
+        )
+
+    ax.set_title("Grover Amplification Under Increasing Decoherence")
+    ax.set_xlabel("Grover iterations")
+    ax.set_ylabel("Target-state probability")
+    ax.set_ylim(0, 1.05)
+    ax.grid(alpha=0.25)
+    ax.legend(loc="best")
+    fig.tight_layout()
+    _save_if_requested(fig, save_path)
+    return fig
+
+
+def plot_iteration_overlay_curves(
+    results: list[dict[str, Any]],
+    title: str,
+    adaptive_y: bool = False,
+    save_path: str | Path | None = None,
+):
+    """Plot multiple target-probability curves over Grover iterations."""
+
+    _validate_results(results)
+    fig, ax = plt.subplots(figsize=(9, 5))
+    all_probabilities: list[float] = []
+    recommended_iterations = sorted(
+        {
+            row["recommended_iteration"]
+            for row in results
+            if row.get("recommended_iteration") is not None
+        }
+    )
+    scenarios = list(dict.fromkeys(row["scenario"] for row in results))
+    for scenario in scenarios:
+        rows = [row for row in results if row["scenario"] == scenario]
+        iterations = [_require_key(row, "iterations") for row in rows]
+        probabilities = [_require_key(row, "target_probability") for row in rows]
+        all_probabilities.extend(float(value) for value in probabilities)
+        ax.plot(iterations, probabilities, marker="o", linewidth=2, label=scenario)
+        _annotate_peak(ax, iterations, probabilities)
+
+    for recommended in recommended_iterations[:5]:
+        ax.axvline(recommended, linestyle="--", linewidth=1.2, color="#444444", alpha=0.55)
+        ax.text(
+            recommended,
+            0.98 if not adaptive_y else _adaptive_overlay_ymax(all_probabilities) * 0.92,
+            "Recommended k",
+            rotation=90,
+            va="top",
+            ha="right",
+            fontsize=8,
+            color="#444444",
+        )
+
+    ax.set_title(title)
+    ax.set_xlabel("Grover iterations")
+    ax.set_ylabel("Target-state probability")
+    if adaptive_y:
+        ax.set_ylim(0, _adaptive_overlay_ymax(all_probabilities))
+    else:
+        ax.set_ylim(0, 1.05)
+    ax.grid(alpha=0.25)
+    ax.legend(loc="best")
+    fig.tight_layout()
+    _save_if_requested(fig, save_path)
+    return fig
+
+
+def plot_probability_loss(
+    results: list[dict[str, Any]],
+    save_path: str | Path | None = None,
+):
+    """Plot Delta P = P_ideal - P_noisy across iterations."""
+
+    _validate_results(results)
+    iterations = [_require_key(row, "iterations") for row in results]
+    losses = [_require_key(row, "probability_loss") for row in results]
+
+    fig, ax = plt.subplots(figsize=(8, 4.5))
+    ax.plot(iterations, losses, marker="o", color="#D1495B", linewidth=2)
+    ax.axhline(0, color="#222222", linewidth=1, alpha=0.5)
+    ax.set_title("Probability Loss From Ideal")
+    ax.set_xlabel("Grover iterations")
+    ax.set_ylabel("Delta P = Pideal - Pnoisy")
+    _set_adaptive_xlim(ax, iterations)
+    ax.grid(alpha=0.25)
+    fig.tight_layout()
+    _save_if_requested(fig, save_path)
+    return fig
+
+
+def plot_coherence_sweep(
+    results: list[dict[str, Any]],
+    x_key: str,
+    title: str,
+    x_label: str,
+    save_path: str | Path | None = None,
+):
+    """Plot target probability while sweeping a physical coherence time."""
+
+    _validate_results(results)
+    x_values = [_require_key(row, x_key) for row in results]
+    noisy_success = [
+        row.get("noisy_success_probability", row.get("success_probability"))
+        for row in results
+    ]
+
+    fig, ax = plt.subplots(figsize=(8, 4.5))
+    ax.plot(x_values, noisy_success, marker="o", color="#2E86AB", linewidth=2)
+    ax.set_title(title)
+    ax.set_xlabel(x_label)
+    ax.set_ylabel("Target-state probability")
+    _set_adaptive_xlim(ax, x_values)
+    ax.set_ylim(0, 1.05)
+    ax.grid(alpha=0.25)
+    fig.tight_layout()
+    _save_if_requested(fig, save_path)
+    return fig
+
+
+def plot_scalability_growth(
+    results: list[dict[str, Any]],
+    y_key: str,
+    title: str,
+    y_label: str,
+    save_path: str | Path | None = None,
+):
+    """Plot a scalability-growth metric against dataset size."""
+
+    _validate_results(results)
+    sizes = [_require_key(row, "dataset_size") for row in results]
+    values = [_require_key(row, y_key) for row in results]
+
+    fig, ax = plt.subplots(figsize=(8, 4.5))
+    ax.plot(sizes, values, marker="o", color="#2E86AB", linewidth=2)
+    ax.set_title(title)
+    ax.set_xlabel("Dataset size")
+    ax.set_ylabel(y_label)
+    ax.grid(alpha=0.25)
+    fig.tight_layout()
+    _save_if_requested(fig, save_path)
+    return fig
+
+
 def plot_classical_vs_grover(
     results: list[dict[str, Any]] | dict[str, Any],
     save_path: str | Path | None = None,
@@ -175,9 +345,10 @@ def plot_classical_vs_grover(
     ax.plot(sizes, classical_average, marker="s", label="Classical average", color="#F4A261")
     ax.plot(sizes, grover_iterations, marker="^", label="Grover recommended", color="#2E86AB")
     ax.set_title("Classical Linear Search vs Grover Search")
-    ax.set_xlabel("Dataset size")
+    ax.set_xlabel("Dataset size (log scale)")
     ax.set_ylabel("Queries or iterations")
-    ax.grid(alpha=0.25)
+    ax.set_xscale("log")
+    ax.grid(alpha=0.25, which="both")
     ax.legend(loc="best")
     fig.tight_layout()
     _save_if_requested(fig, save_path)
@@ -307,6 +478,30 @@ def _comparison_legend_handles(target_binary: str, noisy_most_likely: str) -> li
             plt.Rectangle((0, 0), 1, 1, color=NOISY_MOST_LIKELY_COLOR, label="Noisy most likely"),
         )
     return handles
+
+
+def _annotate_peak(ax, iterations: list[Any], probabilities: list[Any]) -> None:
+    """Mark and label the peak of one iteration curve."""
+
+    peak_index = max(range(len(probabilities)), key=probabilities.__getitem__)
+    peak_iteration = iterations[peak_index]
+    peak_probability = probabilities[peak_index]
+    ax.scatter([peak_iteration], [peak_probability], s=55, zorder=4)
+    ax.annotate(
+        f"Peak k={peak_iteration}, P={peak_probability:.2f}",
+        (peak_iteration, peak_probability),
+        textcoords="offset points",
+        xytext=(4, 5),
+        fontsize=8,
+    )
+
+
+def _adaptive_overlay_ymax(probabilities: list[float]) -> float:
+    """Return adaptive y-axis max for noisy overlay plots."""
+
+    if not probabilities:
+        return 0.05
+    return max(0.05, max(probabilities) * 1.15)
 
 
 def _adaptive_probability_upper_limit(probabilities: list[float]) -> float:

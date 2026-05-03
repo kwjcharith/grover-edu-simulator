@@ -5,7 +5,9 @@ from groverlab.grover_config import NoiseConfig
 from groverlab.grover_core import (
     apply_diffuser,
     build_grover_circuit,
+    decoherence_probabilities,
     decode_result,
+    derive_pure_dephasing_time_us,
     get_gate_counts,
     get_statevector_probabilities,
     run_ideal_simulation,
@@ -82,11 +84,32 @@ def test_zero_noise_enabled_matches_ideal_simulation():
             depolar_prob=0.0,
             measurement_error_prob=0.0,
             gate_error_prob=0.0,
+            t1_relaxation_us=500.0,
+            t2_coherence_us=300.0,
         ),
         seed=42,
     )
 
     assert noisy_counts == ideal_counts
+
+
+def test_decoherence_probabilities_derive_pure_dephasing_without_double_counting():
+    config = NoiseConfig(
+        noise_enabled=True,
+        t1_relaxation_us=120.0,
+        t2_coherence_us=80.0,
+    )
+
+    probabilities = decoherence_probabilities(config, gate_duration_us=0.05)
+
+    assert derive_pure_dephasing_time_us(120.0, 80.0) == pytest.approx(120.0)
+    assert probabilities["amplitude_damping_probability"] > 0
+    assert probabilities["pure_dephasing_probability"] > 0
+
+
+def test_noise_config_rejects_t2_above_physical_limit():
+    with pytest.raises(ValueError, match="t2_coherence_us"):
+        NoiseConfig(t1_relaxation_us=20.0, t2_coherence_us=50.0)
 
 
 def test_decode_result_reports_target_success_probability():

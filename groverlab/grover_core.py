@@ -2,17 +2,29 @@
 
 from __future__ import annotations
 
-from math import floor, pi, sqrt
+from math import exp, floor, inf, isinf, pi, sqrt
 from typing import Any
 
 from qiskit import ClassicalRegister, QuantumCircuit, transpile
 from qiskit.quantum_info import Statevector
 from qiskit_aer import AerSimulator
-from qiskit_aer.noise import NoiseModel, ReadoutError, depolarizing_error
+from qiskit_aer.noise import (
+    NoiseModel,
+    ReadoutError,
+    amplitude_damping_error,
+    depolarizing_error,
+    phase_damping_error,
+)
 
 from groverlab.grover_config import DatasetMapping, NoiseConfig
 from groverlab.grover_data import decode_bitstring
 from groverlab.grover_oracle import apply_multi_controlled_z, apply_phase_oracle
+
+
+SINGLE_QUBIT_GATE_DURATION_US = 0.05
+MULTI_QUBIT_GATE_DURATION_US = 0.30
+IDEAL_T1_RELAXATION_US = 500.0
+IDEAL_T2_COHERENCE_US = 300.0
 
 
 def create_initial_circuit(n_qubits: int) -> QuantumCircuit:
@@ -109,6 +121,16 @@ def build_noise_model(noise_config: NoiseConfig | None) -> NoiseModel | None:
         noise_model.add_all_qubit_quantum_error(two_qubit_error, ["cx"])
         noise_model.add_all_qubit_quantum_error(three_qubit_error, ["ccx"])
 
+    one_qubit_decoherence = _decoherence_error(noise_config, SINGLE_QUBIT_GATE_DURATION_US, 1)
+    two_qubit_decoherence = _decoherence_error(noise_config, MULTI_QUBIT_GATE_DURATION_US, 2)
+    three_qubit_decoherence = _decoherence_error(noise_config, MULTI_QUBIT_GATE_DURATION_US, 3)
+    if one_qubit_decoherence is not None:
+        noise_model.add_all_qubit_quantum_error(one_qubit_decoherence, ["x", "h", "z"])
+    if two_qubit_decoherence is not None:
+        noise_model.add_all_qubit_quantum_error(two_qubit_decoherence, ["cx"])
+    if three_qubit_decoherence is not None:
+        noise_model.add_all_qubit_quantum_error(three_qubit_decoherence, ["ccx"])
+
     if noise_config.measurement_error_prob > 0:
         p = noise_config.measurement_error_prob
         readout_error = ReadoutError([[1 - p, p], [p, 1 - p]])
@@ -196,6 +218,37 @@ def get_statevector_probabilities(qc: QuantumCircuit) -> dict[str, float]:
     }
 
 
+def derive_pure_dephasing_time_us(t1_relaxation_us: float, t2_coherence_us: float) -> float:
+    """Derive pure dephasing time Tphi from T1 and T2 without double-counting T1."""
+
+    denominator = (1 / t2_coherence_us) - (1 / (2 * t1_relaxation_us))
+    if denominator <= 0:
+        return inf
+    return 1 / denominator
+
+
+def decoherence_probabilities(
+    noise_config: NoiseConfig,
+    gate_duration_us: float = SINGLE_QUBIT_GATE_DURATION_US,
+) -> dict[str, float]:
+    """Convert physical coherence times into channel probabilities."""
+
+    if gate_duration_us < 0:
+        raise ValueError("gate_duration_us must be non-negative.")
+
+    p_t1 = 1 - exp(-gate_duration_us / noise_config.t1_relaxation_us)
+    t_phi = derive_pure_dephasing_time_us(
+        noise_config.t1_relaxation_us,
+        noise_config.t2_coherence_us,
+    )
+    p_phi = 0.0 if isinf(t_phi) else 1 - exp(-gate_duration_us / t_phi)
+    return {
+        "t_phi_us": t_phi,
+        "amplitude_damping_probability": p_t1,
+        "pure_dephasing_probability": p_phi,
+    }
+
+
 def recommended_iterations(search_space_size: int, marked_states: int = 1) -> int:
     """Return the standard approximate number of Grover iterations."""
 
@@ -277,6 +330,40 @@ def _combined_probability(first: float, second: float) -> float:
     return max(0.0, min(1.0, combined))
 
 
+def _decoherence_error(
+    noise_config: NoiseConfig,
+    gate_duration_us: float,
+    n_qubits: int,
+):
+    """Build a tensor product of T1 amplitude damping and pure dephasing errors."""
+
+    probabilities = decoherence_probabilities(noise_config, gate_duration_us)
+    p_t1 = probabilities["amplitude_damping_probability"]
+    p_phi = probabilities["pure_dephasing_probability"]
+    if p_t1 <= 0 and p_phi <= 0:
+        return None
+
+    single_error = None
+    if p_t1 > 0:
+        single_error = amplitude_damping_error(p_t1)
+    if p_phi > 0:
+        phase_error = phase_damping_error(p_phi)
+        single_error = phase_error if single_error is None else single_error.compose(phase_error)
+
+    if single_error is None:
+        return None
+    return _tensor_quantum_error(single_error, n_qubits)
+
+
+def _tensor_quantum_error(error, n_qubits: int):
+    """Tensor the same one-qubit error across an operation width."""
+
+    tensor_error = error
+    for _ in range(n_qubits - 1):
+        tensor_error = tensor_error.tensor(error)
+    return tensor_error
+
+
 def _has_zero_noise(noise_config: NoiseConfig) -> bool:
     """Return whether an enabled noisy run has no active error channels."""
 
@@ -284,4 +371,6 @@ def _has_zero_noise(noise_config: NoiseConfig) -> bool:
         noise_config.depolar_prob == 0
         and noise_config.gate_error_prob == 0
         and noise_config.measurement_error_prob == 0
+        and noise_config.t1_relaxation_us >= IDEAL_T1_RELAXATION_US
+        and noise_config.t2_coherence_us >= IDEAL_T2_COHERENCE_US
     )

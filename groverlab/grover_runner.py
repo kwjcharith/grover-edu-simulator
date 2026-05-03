@@ -210,7 +210,9 @@ def _generate_warnings(mapping, config: GroverConfig, iterations: int) -> list[s
             f"{mapping.unused_states} padded state(s) do not correspond to dataset items."
         )
     if config.noise_config.noise_enabled:
-        warnings.append("Noisy simulation is enabled; noise can reduce measured success.")
+        warnings.append(
+            "Noisy simulation is enabled; depolarising noise, measurement error, T1 relaxation, and T2 dephasing can reduce measured success."
+        )
     if not mapping.target_found and config.missing_target_mode == "experimental":
         warnings.append(
             "This run is an experimental no-solution demonstration. Any measured item is random and should not be interpreted as a successful search."

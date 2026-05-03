@@ -9,7 +9,7 @@ from pathlib import Path
 from typing import Any
 
 from groverlab.grover_config import GroverResult
-from groverlab.grover_core import recommended_iterations
+from groverlab.grover_core import decoherence_probabilities, recommended_iterations
 from groverlab.grover_education import generate_full_explanation
 from groverlab.grover_logging import append_log_jsonl, create_experiment_log
 
@@ -65,6 +65,11 @@ def export_student_report_markdown(result: GroverResult, path: str | Path) -> Pa
         f"- Unused padded states: {result.mapping.unused_states}",
         f"- Grover iterations: {_resolved_iterations(result)}",
         f"- Shots: {result.config.shots}",
+        f"- Depolarising noise: {result.config.noise_config.depolar_prob}",
+        f"- Measurement error: {result.config.noise_config.measurement_error_prob}",
+        f"- T1 relaxation time: {result.config.noise_config.t1_relaxation_us} µs",
+        f"- T2 coherence time: {result.config.noise_config.t2_coherence_us} µs",
+        f"- Derived Tphi: {_format_t_phi(result)}",
         "",
         "## Ideal Result",
         "",
@@ -81,6 +86,7 @@ def export_student_report_markdown(result: GroverResult, path: str | Path) -> Pa
                 "## Noisy Result",
                 "",
                 f"- Noisy success probability: {result.noisy_success_probability:.3f}",
+                f"- Probability degradation: {result.success_probability - (result.noisy_success_probability or 0.0):.3f}",
                 f"- Noisy counts: `{json.dumps(result.noisy_counts, sort_keys=True)}`",
                 "",
             ]
@@ -173,6 +179,16 @@ def _summary_row(result: GroverResult | dict[str, Any]) -> dict[str, Any]:
         "shots": result.config.shots,
         "success_probability": result.success_probability,
         "noisy_success_probability": result.noisy_success_probability,
+        "probability_degradation": (
+            result.success_probability - result.noisy_success_probability
+            if result.noisy_success_probability is not None
+            else None
+        ),
+        "depolar_prob": result.config.noise_config.depolar_prob,
+        "measurement_error_prob": result.config.noise_config.measurement_error_prob,
+        "t1_relaxation_us": result.config.noise_config.t1_relaxation_us,
+        "t2_coherence_us": result.config.noise_config.t2_coherence_us,
+        "t_phi_us": decoherence_probabilities(result.config.noise_config)["t_phi_us"],
         "circuit_depth": result.circuit_depth,
         "total_gates": sum(int(value) for value in result.gate_counts.values()),
         "decoded_correctly": result.found,
@@ -185,6 +201,13 @@ def _resolved_iterations(result: GroverResult) -> int:
     if result.config.iterations is not None:
         return result.config.iterations
     return recommended_iterations(result.mapping.padded_size)
+
+
+def _format_t_phi(result: GroverResult) -> str:
+    """Format derived Tphi for Markdown reports."""
+
+    t_phi = decoherence_probabilities(result.config.noise_config)["t_phi_us"]
+    return "infinite" if t_phi == float("inf") else f"{t_phi:.3f} µs"
 
 
 def _json_safe(value: Any) -> Any:

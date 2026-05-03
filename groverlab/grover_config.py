@@ -22,6 +22,8 @@ class NoiseConfig:
     depolar_prob: float = 0.0
     measurement_error_prob: float = 0.0
     gate_error_prob: float = 0.0
+    t1_relaxation_us: float = 120.0
+    t2_coherence_us: float = 80.0
 
     def __post_init__(self) -> None:
         """Validate probability fields after initialization."""
@@ -29,6 +31,13 @@ class NoiseConfig:
         _validate_probability("depolar_prob", self.depolar_prob)
         _validate_probability("measurement_error_prob", self.measurement_error_prob)
         _validate_probability("gate_error_prob", self.gate_error_prob)
+        _validate_range("t1_relaxation_us", self.t1_relaxation_us, 10.0, 500.0)
+        _validate_range(
+            "t2_coherence_us",
+            self.t2_coherence_us,
+            5.0,
+            min(300.0, 2 * self.t1_relaxation_us),
+        )
 
 
 @dataclass(frozen=True)
@@ -152,3 +161,10 @@ def _validate_probability(field_name: str, value: float) -> None:
 
     if value < 0 or value > 1:
         raise ValueError(f"{field_name} must be between 0 and 1.")
+
+
+def _validate_range(field_name: str, value: float, minimum: float, maximum: float) -> None:
+    """Validate that a numeric field is within an inclusive range."""
+
+    if value < minimum or value > maximum:
+        raise ValueError(f"{field_name} must be between {minimum:g} and {maximum:g}.")

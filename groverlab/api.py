@@ -32,6 +32,8 @@ class SimulationRequest(BaseModel):
     depolar_prob: float = 0.0
     measurement_error_prob: float = 0.0
     gate_error_prob: float = 0.0
+    t1_relaxation_us: float = 120.0
+    t2_coherence_us: float = 80.0
     missing_target_mode: str = "stop"
 
 
@@ -135,6 +137,8 @@ def _config_from_request(
                 depolar_prob=request.depolar_prob,
                 measurement_error_prob=request.measurement_error_prob,
                 gate_error_prob=request.gate_error_prob,
+                t1_relaxation_us=request.t1_relaxation_us,
+                t2_coherence_us=request.t2_coherence_us,
             ),
             missing_target_mode=request.missing_target_mode,
         )
