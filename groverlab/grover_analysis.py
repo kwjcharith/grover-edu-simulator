@@ -7,8 +7,8 @@ from math import asin, floor, pi, sin, sqrt
 from typing import Any
 
 from groverlab.grover_config import GroverConfig, GroverResult, NoiseConfig
-from groverlab.grover_core import decoherence_probabilities
 from groverlab.grover_data import calculate_padded_size, calculate_required_qubits
+from groverlab.grover_decoherence import decoherence_probabilities
 
 
 DECOHERENCE_ITERATION_PRESETS = {

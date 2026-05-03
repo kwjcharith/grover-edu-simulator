@@ -8,8 +8,9 @@ from dataclasses import asdict, is_dataclass
 from pathlib import Path
 from typing import Any
 
+from groverlab.grover_analysis import recommended_iterations
 from groverlab.grover_config import GroverResult
-from groverlab.grover_core import decoherence_probabilities, recommended_iterations
+from groverlab.grover_decoherence import decoherence_probabilities
 from groverlab.grover_education import generate_full_explanation
 from groverlab.grover_logging import append_log_jsonl, create_experiment_log
 
@@ -200,7 +201,7 @@ def _resolved_iterations(result: GroverResult) -> int:
 
     if result.config.iterations is not None:
         return result.config.iterations
-    return recommended_iterations(result.mapping.padded_size)
+    return recommended_iterations(result.mapping.n_items)
 
 
 def _format_t_phi(result: GroverResult) -> str:

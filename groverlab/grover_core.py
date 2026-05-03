@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from math import exp, floor, inf, isinf, pi, sqrt
+from math import floor, pi, sqrt
 from typing import Any
 
 from qiskit import ClassicalRegister, QuantumCircuit, transpile
@@ -18,13 +18,15 @@ from qiskit_aer.noise import (
 
 from groverlab.grover_config import DatasetMapping, NoiseConfig
 from groverlab.grover_data import decode_bitstring
+from groverlab.grover_decoherence import (
+    IDEAL_T1_RELAXATION_US,
+    IDEAL_T2_COHERENCE_US,
+    MULTI_QUBIT_GATE_DURATION_US,
+    SINGLE_QUBIT_GATE_DURATION_US,
+    decoherence_probabilities,
+    derive_pure_dephasing_time_us,
+)
 from groverlab.grover_oracle import apply_multi_controlled_z, apply_phase_oracle
-
-
-SINGLE_QUBIT_GATE_DURATION_US = 0.05
-MULTI_QUBIT_GATE_DURATION_US = 0.30
-IDEAL_T1_RELAXATION_US = 500.0
-IDEAL_T2_COHERENCE_US = 300.0
 
 
 def create_initial_circuit(n_qubits: int) -> QuantumCircuit:
@@ -215,37 +217,6 @@ def get_statevector_probabilities(qc: QuantumCircuit) -> dict[str, float]:
     return {
         str(state): float(probability)
         for state, probability in statevector.probabilities_dict().items()
-    }
-
-
-def derive_pure_dephasing_time_us(t1_relaxation_us: float, t2_coherence_us: float) -> float:
-    """Derive pure dephasing time Tphi from T1 and T2 without double-counting T1."""
-
-    denominator = (1 / t2_coherence_us) - (1 / (2 * t1_relaxation_us))
-    if denominator <= 0:
-        return inf
-    return 1 / denominator
-
-
-def decoherence_probabilities(
-    noise_config: NoiseConfig,
-    gate_duration_us: float = SINGLE_QUBIT_GATE_DURATION_US,
-) -> dict[str, float]:
-    """Convert physical coherence times into channel probabilities."""
-
-    if gate_duration_us < 0:
-        raise ValueError("gate_duration_us must be non-negative.")
-
-    p_t1 = 1 - exp(-gate_duration_us / noise_config.t1_relaxation_us)
-    t_phi = derive_pure_dephasing_time_us(
-        noise_config.t1_relaxation_us,
-        noise_config.t2_coherence_us,
-    )
-    p_phi = 0.0 if isinf(t_phi) else 1 - exp(-gate_duration_us / t_phi)
-    return {
-        "t_phi_us": t_phi,
-        "amplitude_damping_probability": p_t1,
-        "pure_dephasing_probability": p_phi,
     }
 
 

@@ -9,8 +9,8 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
+from groverlab.grover_analysis import recommended_iterations
 from groverlab.grover_config import ExperimentLog, GroverResult
-from groverlab.grover_core import recommended_iterations
 
 
 DEFAULT_LOG_PATH = "outputs/experiment_logs/grover_logs.jsonl"
@@ -51,7 +51,7 @@ def create_experiment_log(
     resolved_session_id = session_id or create_session_id()
     iterations = result.config.iterations
     if iterations is None:
-        iterations = recommended_iterations(result.mapping.padded_size)
+        iterations = recommended_iterations(result.mapping.n_items)
 
     return ExperimentLog(
         session_id=resolved_session_id,
@@ -113,4 +113,3 @@ def _log_to_allowed_dict(log: ExperimentLog) -> dict[str, Any]:
     if not is_dataclass(log):
         raise TypeError("log must be an ExperimentLog dataclass instance.")
     return anonymize_log_payload(asdict(log))
-

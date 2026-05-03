@@ -42,7 +42,6 @@ from groverlab.grover_analysis import (
     scalability_analysis,
 )
 from groverlab.grover_config import GroverConfig, NoiseConfig
-from groverlab.grover_core import decoherence_probabilities
 from groverlab.grover_data import (
     calculate_padded_size,
     calculate_required_qubits,
@@ -51,6 +50,7 @@ from groverlab.grover_data import (
     load_csv_items,
     parse_comma_text,
 )
+from groverlab.grover_decoherence import decoherence_probabilities
 from groverlab.grover_education import CORE_WARNING, MISCONCEPTION_WARNINGS, generate_full_explanation
 from groverlab.grover_export import (
     export_counts_csv,
@@ -69,7 +69,6 @@ from groverlab.grover_plots import (
     plot_probability_loss,
     plot_scalability_growth,
 )
-from groverlab.grover_runner import run_grover_simulation
 
 
 DEFAULT_DATASET_TEXT = "apple, mango, banana, orange"
@@ -391,6 +390,8 @@ def main() -> None:
             missing_target_mode=missing_target_mode,
         )
         with st.spinner("Running Grover simulation..."):
+            from groverlab.grover_runner import run_grover_simulation
+
             result = run_grover_simulation(config)
     except (MemoryError, TimeoutError, RuntimeError) as exc:
         st.error(
